@@ -1,0 +1,96 @@
+.ask-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.scale-form,
+.waive-form,
+.stack-form,
+.priority-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ask-form input,
+.scale-form input,
+.waive-form input,
+.stack-form input,
+.priority-form input {
+  width: 100%;
+  padding: 0 10px;
+}
+
+.priority-form {
+  align-items: end;
+  border: 0;
+  padding: 0;
+}
+
+.priority-form label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.modal {
+  width: min(720px, calc(100vw - 28px));
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0;
+  background: transparent;
+}
+
+.modal::backdrop {
+  background: rgba(23, 32, 37, 0.34);
+}
+
+.modal-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  background: var(--surface);
+}
+
+.modal-card label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.modal-card input,
+.modal-card select {
+  width: 100%;
+  padding: 0 10px;
+}
+
+.modal-head,
+.modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modal-actions {
+  justify-content: flex-end;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.icon-button {
+  width: 34px;
+  padding: 0;
+  font-size: 20px;
+}

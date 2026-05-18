@@ -28,7 +28,8 @@ export async function installCodexIntegration(paths: ArdexPaths): Promise<CodexI
   const skillPath = join(skillRoot(), "ardex", "SKILL.md");
   const hooksDir = join(paths.home, "hooks");
   const stopScriptPath = join(hooksDir, "stop-check.mjs");
-  const postToolUseScriptPath = join(hooksDir, "post-tool-use-evidence.mjs");
+  const legacyPostToolUseScriptPath = join(hooksDir, "post-tool-use-evidence.mjs");
+  const userPromptScriptPath = join(hooksDir, "user-prompt-context.mjs");
   const hooksConfigPath = join(codexHome(), "hooks.json");
 
   await mkdir(dirname(skillPath), { recursive: true });
@@ -36,19 +37,19 @@ export async function installCodexIntegration(paths: ArdexPaths): Promise<CodexI
   await mkdir(dirname(hooksConfigPath), { recursive: true });
   await writeFile(skillPath, ardexSkillContent(), "utf8");
   await writeFile(stopScriptPath, stopHookScript(), "utf8");
-  await writeFile(postToolUseScriptPath, postToolUseHookScript(), "utf8");
+  await writeFile(legacyPostToolUseScriptPath, disabledPostToolUseHookScript(), "utf8");
+  await writeFile(userPromptScriptPath, userPromptHookScript(), "utf8");
   await mergeHooksConfig(hooksConfigPath, [
+    {
+      event: "UserPromptSubmit",
+      entry: {
+        hooks: [{ type: "command", command: `${quote(process.execPath)} ${quote(userPromptScriptPath)}`, timeout: 10, statusMessage: "Loading Ardex statement" }],
+      },
+    },
     {
       event: "Stop",
       entry: {
         hooks: [{ type: "command", command: `${quote(process.execPath)} ${quote(stopScriptPath)}`, timeout: 10, statusMessage: "Checking Ardex gates" }],
-      },
-    },
-    {
-      event: "PostToolUse",
-      entry: {
-        matcher: "Bash|apply_patch|Edit|Write",
-        hooks: [{ type: "command", command: `${quote(process.execPath)} ${quote(postToolUseScriptPath)}`, timeout: 10, statusMessage: "Recording Ardex evidence" }],
       },
     },
   ]);
@@ -56,8 +57,8 @@ export async function installCodexIntegration(paths: ArdexPaths): Promise<CodexI
   return {
     skillPath,
     hooksConfigPath,
-    hookScriptPaths: [stopScriptPath, postToolUseScriptPath],
-    managedPaths: [skillPath, stopScriptPath, postToolUseScriptPath, hooksConfigPath],
+    hookScriptPaths: [userPromptScriptPath, stopScriptPath],
+    managedPaths: [skillPath, userPromptScriptPath, stopScriptPath, legacyPostToolUseScriptPath, hooksConfigPath],
   };
 }
 
@@ -78,11 +79,15 @@ async function mergeHooksConfig(
 ): Promise<void> {
   const config = await readHooksConfig(path);
   config.hooks ??= {};
+  for (const eventName of Object.keys(config.hooks)) {
+    config.hooks[eventName] = (config.hooks[eventName] ?? []).filter((entry) => !isManagedArdexHook(entry));
+    if (config.hooks[eventName]?.length === 0) {
+      delete config.hooks[eventName];
+    }
+  }
   for (const addition of additions) {
     const entries = config.hooks[addition.event] ?? [];
-    if (!entries.some((entry) => sameHookEntry(entry, addition.entry))) {
-      entries.push(addition.entry);
-    }
+    entries.push(addition.entry);
     config.hooks[addition.event] = entries;
   }
   await writeBackupIfExisting(path);
@@ -102,8 +107,18 @@ async function readHooksConfig(path: string): Promise<HooksConfig> {
   }
 }
 
-function sameHookEntry(left: HookEntry, right: HookEntry): boolean {
-  return left.matcher === right.matcher && left.hooks.some((hook) => right.hooks.some((candidate) => candidate.command === hook.command));
+function isManagedArdexHook(entry: HookEntry): boolean {
+  return entry.hooks.some((hook) => {
+    const command = hook.command.toLowerCase();
+    const status = hook.statusMessage?.toLowerCase() ?? "";
+    return (
+      command.includes("/.ardex/hooks/") ||
+      command.includes("stop-check.mjs") ||
+      command.includes("post-tool-use-evidence.mjs") ||
+      command.includes("user-prompt-context.mjs") ||
+      status.includes("ardex")
+    );
+  });
 }
 
 async function atomicWriteJson(path: string, value: unknown): Promise<void> {
@@ -143,6 +158,7 @@ Use Ardex CLI as source of truth for project/session/task state. Prefer stable J
 1. Run \`ardex check --json\`. If unavailable, run \`ardex start --json\`.
 2. Run \`ardex project current --json\`. If no project exists, ask before registering path.
 3. Run \`ardex statement --json\` before planning or editing.
+4. Treat Ardex hook context as current state. If it conflicts with memory, Ardex wins.
 
 ## Work Loop
 
@@ -150,13 +166,13 @@ Use Ardex CLI as source of truth for project/session/task state. Prefer stable J
 - Claim a task before editing: \`ardex -p <project> task <task> claim --json\`.
 - If a user-paused task exists, do not resume it unless the statement says \`resume:<task_id>\` or the user explicitly asks.
 - Respect task owner. Use \`subagent:<role>\` as delegation hint and keep Ardex updated with \`task <task> assign <owner>\`.
-- Record meaningful evidence after real verification: \`ardex -p <project> evidence add test --task <task> --cmd "<command>" --pass true --summary "<result>" --json\`.
-- Record SDD/VDD artifacts: \`spec\`, \`acceptance\`, \`screenshot\`, \`generated_image\`, \`browser_diff\`, \`prototype\`.
+- Do not duplicate Codex command/file logs in Ardex. Use Ardex evidence only for user decisions, external URLs, manual QA notes, deploy links, or artifacts Codex cannot reconstruct.
 - Use \`ardex -p <project> ask "<question>" --json\` when blocked by user choice.
 - When an ask is answered, read \`ardex statement --json\` and continue from \`nextExpectedAction\`.
 - Before done, run \`ardex -p <project> task <task> checklist --json\`.
-- Do not mark tasks done unless progress is 1 and required quality gate evidence exists.
-- At end of turn, run \`ardex -p <project> statement --json\` and report task, blockers, and evidence.
+- Do not mark tasks done unless progress is 1, the task is not paused, and no hard Ardex blockers remain.
+- At end of turn, run \`ardex -p <project> statement --json\` and report task, blockers, and next action.
+- If a Stop hook blocks, fix the Ardex state instead of ignoring it.
 
 ## Scale Rules
 
@@ -228,33 +244,49 @@ function output(value) {
 `;
 }
 
-function postToolUseHookScript(): string {
+function disabledPostToolUseHookScript(): string {
+  return `#!/usr/bin/env node
+process.exit(0);
+`;
+}
+
+function userPromptHookScript(): string {
   return `#!/usr/bin/env node
 import { spawnSync } from "node:child_process";
 
 const input = await readStdinJson();
 const cwd = typeof input.cwd === "string" ? input.cwd : process.cwd();
-const summary = summarize(input);
 const ardex = process.env.ARDEX_BIN || "ardex";
 ensureDaemon(ardex, cwd);
 
-if (summary && !summary.startsWith("ardex ")) {
-  const project = runJson(ardex, ["project", "current", "--json"], cwd)?.data?.project?.id;
-  if (project) {
-    const recorded = spawnSync(ardex, ["-p", project, "evidence", "add", "command", "--summary", summary, "--status", "candidate", "--json"], {
-      cwd,
-      encoding: "utf8",
-      env: process.env,
-      timeout: 3000,
-    });
-    const evidenceId = parseEvidenceId(recorded.stdout);
-    if (evidenceId) {
-      output({ hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: "Ardex recorded candidate command evidence " + evidenceId + "." } });
-    }
-  }
+const project = runJson(ardex, ["project", "current", "--json"], cwd)?.data?.project?.id;
+if (!project) {
+  output({ continue: true, suppressOutput: true });
 }
 
-process.exit(0);
+const statement = runJson(ardex, ["-p", project, "statement", "--json"], cwd);
+const data = statement?.data?.statement;
+if (!data) {
+  output({ continue: true, suppressOutput: true });
+}
+
+const lines = [
+  "Ardex active. Treat this as source of truth.",
+  "Project: " + data.project?.id + " " + data.project?.path,
+  "Session: " + (data.session?.id || "none") + " " + (data.session?.status || ""),
+  "Current task: " + (data.currentTask ? data.currentTask.id + " " + data.currentTask.status + " " + data.currentTask.title : "none"),
+  "Owner: " + (data.currentTask?.owner || "none"),
+  "Next: " + (data.nextExpectedAction || "none"),
+  "Blockers: " + (Array.isArray(data.blockers) ? data.blockers.length : 0),
+  "Rules: check Ardex statement before work; claim/resume task before edits; keep task state current; use evidence only for external/user-visible artifacts; run checklist before done."
+];
+
+output({
+  hookSpecificOutput: {
+    hookEventName: "UserPromptSubmit",
+    additionalContext: lines.join("\\n")
+  }
+});
 
 async function readStdinJson() {
   let raw = "";
@@ -264,14 +296,6 @@ async function readStdinJson() {
   } catch {
     return {};
   }
-}
-
-function summarize(input) {
-  const command = input.tool_input?.command ?? input.toolInput?.command ?? input.input?.command;
-  if (typeof command === "string" && command.length > 0) {
-    return redact(command).slice(0, 240);
-  }
-  return redact(String(input.tool_name || input.toolName || "tool")).slice(0, 120);
 }
 
 function runJson(command, args, cwd) {
@@ -288,20 +312,6 @@ function ensureDaemon(command, cwd) {
   const checked = runJson(command, ["check", "--json"], cwd);
   if (checked?.ok) return;
   runJson(command, ["start", "--json"], cwd);
-}
-
-function redact(value) {
-  return value
-    .replace(/sk-[A-Za-z0-9_-]{20,}/g, "[REDACTED_OPENAI_KEY]")
-    .replace(/(api[_-]?key|token|secret|password)=([^\\s]+)/gi, "$1=[REDACTED]");
-}
-
-function parseEvidenceId(stdout) {
-  try {
-    return JSON.parse(stdout)?.data?.evidence?.id || null;
-  } catch {
-    return null;
-  }
 }
 
 function output(value) {

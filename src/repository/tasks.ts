@@ -1,10 +1,10 @@
 import { Database } from "bun:sqlite";
-import { notFound, qualityGateFailed, qualityGateMissing, transitionRejected, usageError } from "../errors.ts";
+import { notFound, transitionRejected, usageError } from "../errors.ts";
 import { createId, nextAlias } from "../ids.ts";
 import { requireProject } from "./projects.ts";
 import { currentSession, findCurrentSessionId } from "./sessions.ts";
-import { type Evidence, type Task, type TaskEvent } from "./types.ts";
-import { type EvidenceRow, type TaskEventRow, type TaskRow, evidenceFromRow, taskEventFromRow, taskFromRow } from "./rows.ts";
+import { type Task, type TaskEvent } from "./types.ts";
+import { type TaskEventRow, type TaskRow, taskEventFromRow, taskFromRow } from "./rows.ts";
 
 export type ProductionChecklistItem = {
   id: string;
@@ -203,7 +203,6 @@ export function completeTask(db: Database, projectRef: string, taskRef: string):
     if (task.progress < 1) {
       throw transitionRejected("Task progress must be 1 before done.", { taskId: task.alias, progress: task.progress });
     }
-    assertTaskGateSatisfied(db, task);
     throw transitionRejected("Production checklist failed before task done.", {
       taskId: task.alias,
       failed: checklist.items.filter((item) => item.required && !item.passed).map((item) => item.id),
@@ -376,7 +375,13 @@ export function buildProductionChecklist(db: Database, projectRef: string, taskR
       passed: task.progress >= 1,
       detail: `progress=${task.progress}`,
     },
-    taskGateChecklistItem(db, task),
+    {
+      id: "quality_gate_label",
+      label: "Quality gate label",
+      required: false,
+      passed: true,
+      detail: `gate=${task.qualityGate}`,
+    },
     scaleChecklistItem(db, project.id),
     {
       id: "open_asks",
@@ -403,87 +408,6 @@ export function buildProductionChecklist(db: Database, projectRef: string, taskR
 
 export function taskRuntimeSeconds(task: Task): number {
   return runtimeSecondsAt(task);
-}
-
-function assertTaskGateSatisfied(db: Database, task: Task): void {
-  switch (task.qualityGate) {
-    case "none":
-      return;
-    case "test": {
-      const passing = acceptedTaskEvidence(db, task.id, "test").some((item) => item.payload["pass"] === true);
-      if (!passing) throw qualityGateFailed("Task requires passing test evidence before done.", { taskId: task.alias, missing: ["test:pass=true"] });
-      return;
-    }
-    case "visual": {
-      const hasScreenshot = acceptedTaskEvidence(db, task.id, "screenshot").length > 0 || acceptedTaskEvidence(db, task.id, "generated_image").length > 0;
-      const hasDiff = acceptedTaskEvidence(db, task.id, "browser_diff").length > 0 || acceptedTaskEvidence(db, task.id, "url").length > 0;
-      if (!hasScreenshot || !hasDiff) {
-        throw qualityGateMissing("Task requires screenshot/generated_image and browser_diff/URL evidence before done.", {
-          taskId: task.alias,
-          missing: [hasScreenshot ? null : "screenshot|generated_image", hasDiff ? null : "browser_diff|url"].filter(Boolean),
-        });
-      }
-      return;
-    }
-    case "demo": {
-      const hasDemo = ["url", "prototype"].some((type) => acceptedTaskEvidence(db, task.id, type).length > 0);
-      if (!hasDemo) throw qualityGateMissing("Task requires demo evidence before done.", { taskId: task.alias, missing: ["url", "prototype"] });
-      return;
-    }
-    case "spec": {
-      if (
-        acceptedTaskEvidence(db, task.id, "spec").length === 0 &&
-        acceptedTaskEvidence(db, task.id, "acceptance").length === 0 &&
-        acceptedTaskEvidence(db, task.id, "artifact").length === 0 &&
-        acceptedTaskEvidence(db, task.id, "note").length === 0
-      ) {
-        throw qualityGateMissing("Task requires spec or acceptance evidence before done.", { taskId: task.alias, missing: ["spec", "acceptance"] });
-      }
-      return;
-    }
-    case "scale": {
-      if (acceptedTaskEvidence(db, task.id, "scale_report").length === 0 && acceptedTaskEvidence(db, task.id, "note").length === 0) {
-        throw qualityGateMissing("Task requires scale report or waiver evidence before done.", { taskId: task.alias, missing: ["scale_report", "note"] });
-      }
-      return;
-    }
-    case "review": {
-      if (acceptedTaskEvidence(db, task.id, "note").length === 0 && acceptedTaskEvidence(db, task.id, "advisor").length === 0) {
-        throw qualityGateMissing("Task requires review evidence before done.", { taskId: task.alias, missing: ["note", "advisor"] });
-      }
-      return;
-    }
-    default:
-      throw usageError("Unknown quality gate.", { taskId: task.alias, qualityGate: task.qualityGate });
-  }
-}
-
-function acceptedTaskEvidence(db: Database, taskId: string, type: string): Evidence[] {
-  const rows = db
-    .query("SELECT * FROM evidence WHERE target_type = 'task' AND target_id = ? AND type = ? AND status = 'accepted'")
-    .all(taskId, type) as EvidenceRow[];
-  return rows.map(evidenceFromRow);
-}
-
-function taskGateChecklistItem(db: Database, task: Task): ProductionChecklistItem {
-  try {
-    assertTaskGateSatisfied(db, task);
-    return {
-      id: "quality_gate",
-      label: "Quality gate evidence",
-      required: true,
-      passed: true,
-      detail: `gate=${task.qualityGate}`,
-    };
-  } catch (error) {
-    return {
-      id: "quality_gate",
-      label: "Quality gate evidence",
-      required: true,
-      passed: false,
-      detail: error instanceof Error ? error.message : `gate=${task.qualityGate}`,
-    };
-  }
 }
 
 function scaleChecklistItem(db: Database, projectId: string): ProductionChecklistItem {

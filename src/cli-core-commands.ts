@@ -7,6 +7,7 @@ import { getArdexPaths } from "./paths.ts";
 import { success, type CommandSuccess, VERSION } from "./output.ts";
 import {
   addProject,
+  archiveProject,
   addTask,
   buildProductionChecklist,
   buildStatement,
@@ -18,6 +19,7 @@ import {
   listTaskEvents,
   currentSession,
   listProjects,
+  restoreProject,
   listSessions,
   listTasks,
   pauseTask,
@@ -25,6 +27,7 @@ import {
   requireTask,
   resumeTask,
   setSessionField,
+  setProjectName,
   setTaskOwner,
   setTaskField,
   startSession,
@@ -116,6 +119,21 @@ export async function projectCommand(parsed: ParsedArgs): Promise<CommandSuccess
         if (value === undefined) throw usageError("project show requires a project id.");
         const project = requireProject(db, value);
         return success({ project: projectSummary(project) }, formatObject(projectSummary(project)));
+      }
+      case "rename": {
+        if (value === undefined || rest.length === 0) throw usageError("project rename requires a project id and name.");
+        const project = setProjectName(db, value, rest.join(" "));
+        return success({ project: projectSummary(project) }, `${project.alias}\t${project.name}`);
+      }
+      case "archive": {
+        if (value === undefined) throw usageError("project archive requires a project id.");
+        const project = archiveProject(db, value);
+        return success({ project: projectSummary(project) }, `${project.alias}\tarchived`);
+      }
+      case "restore": {
+        if (value === undefined) throw usageError("project restore requires a project id.");
+        const project = restoreProject(db, value);
+        return success({ project: projectSummary(project) }, `${project.alias}\trestored`);
       }
       case "current": {
         const project = parsed.projectId === undefined ? await currentProject(db) : requireProject(db, parsed.projectId);

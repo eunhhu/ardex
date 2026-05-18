@@ -39,9 +39,15 @@ export function completeSessionForDashboard(paths: ArdexPaths, projectRef: strin
 export function addTaskForDashboard(
   paths: ArdexPaths,
   projectRef: string,
-  input: { title: string; content?: string; priority?: number; importance?: number; qualityGate?: string },
+  input: { title: string; content?: string; priority?: number; importance?: number; qualityGate?: string; owner?: string },
 ): unknown {
-  return mutateDb(paths, (db) => addTask(db, projectRef, input));
+  return mutateDb(paths, (db) => {
+    const task = addTask(db, projectRef, input);
+    if (input.owner !== undefined) {
+      return setTaskOwner(db, projectRef, task.alias, input.owner);
+    }
+    return task;
+  });
 }
 
 export function claimTaskForDashboard(paths: ArdexPaths, projectRef: string, taskRef: string): unknown {
@@ -62,6 +68,10 @@ export function setTaskOwnerForDashboard(paths: ArdexPaths, projectRef: string, 
 
 export function setTaskProgressForDashboard(paths: ArdexPaths, projectRef: string, taskRef: string, progress: number): unknown {
   return mutateDb(paths, (db) => setTaskField(db, projectRef, taskRef, "progress", String(progress)));
+}
+
+export function setTaskPriorityForDashboard(paths: ArdexPaths, projectRef: string, taskRef: string, priority: number): unknown {
+  return mutateDb(paths, (db) => setTaskField(db, projectRef, taskRef, "priority", String(priority)));
 }
 
 export function deleteTaskForDashboard(paths: ArdexPaths, projectRef: string, taskRef: string): unknown {

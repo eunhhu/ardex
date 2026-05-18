@@ -29,6 +29,7 @@ HTTP status mapping:
 - `GET /health`
 - `GET /`
 - `GET /api/projects`
+  Returns non-archived projects by default.
 - `GET /api/projects/:project/dashboard`
 - `GET /events?project=:project`
 - `POST /api/projects/:project/session/start`
@@ -37,7 +38,7 @@ HTTP status mapping:
   Body: `{ "status": "planning|scaling|specifying|implementing|verifying|reviewing|blocked|done" }`
 - `POST /api/projects/:project/session/done`
 - `POST /api/projects/:project/tasks`
-  Body: `{ "title": "string", "content": "string", "priority": 1, "importance": 0.5, "qualityGate": "none|scale|spec|visual|test|demo|review" }`
+  Body: `{ "title": "string", "content": "string", "priority": 1, "importance": 0.5, "owner": "main|subagent:<role>|user", "qualityGate": "none|scale|spec|visual|test|demo|review" }`
 - `POST /api/projects/:project/tasks/:task/claim`
 - `POST /api/projects/:project/tasks/:task/pause`
   Body: `{ "reason": "optional string" }`
@@ -46,6 +47,8 @@ HTTP status mapping:
   Body: `{ "owner": "main|user|subagent:<role>" }`
 - `POST /api/projects/:project/tasks/:task/progress`
   Body: `{ "progress": 0.75 }`
+- `POST /api/projects/:project/tasks/:task/priority`
+  Body: `{ "priority": 2 }`
 - `POST /api/projects/:project/tasks/:task/delete`
 - `POST /api/projects/:project/tasks/:task/done`
 - `GET /api/projects/:project/tasks/:task/checklist`
@@ -62,6 +65,8 @@ HTTP status mapping:
   Body: `{ "reason": "at least 20 characters" }`
 
 Dashboard snapshots include task runtime fields (`startedAt`, `pausedAt`, `resumedAt`, `activeSeconds`, `runtimeSeconds`, `pauseReason`), production checklist state, and output artifacts extracted from accepted `screenshot`, `generated_image`, `prototype`, `url`, and `browser_diff` evidence.
+
+The dashboard UI exposes user-facing controls for project switching, session start, detailed task creation, task priority reorder, ask answer, scale operations, and optional artifact accept/reject. Agent-owned task status, progress, pause/resume, done, delete, and owner mutation remain CLI/API surfaces and are not presented as casual dashboard buttons.
 
 ## Security
 

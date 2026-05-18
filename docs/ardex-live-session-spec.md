@@ -6,7 +6,7 @@ Ardex is a local control plane for Codex work.
 
 Goal: make Codex work visible, consistent, and quality-gated across long sessions, multiple threads, and subagents.
 
-Ardex should not rely on instructions alone. It should enforce workflow through local state, CLI commands, web UI, task state machines, evidence requirements, and project-level defaults.
+Ardex should not rely on instructions alone. It should enforce missing workflow control through local state, CLI commands, web UI, task state machines, and project-level defaults. It must not duplicate Codex-native command logs, file diffs, or test transcripts.
 
 ## 2. Problems To Solve
 
@@ -24,10 +24,10 @@ Ardex should not rely on instructions alone. It should enforce workflow through 
 2. CLI-first automation: Codex updates session state through CLI calls, not heavyweight MCP.
 3. Web UI for control: the user sees and steers live work from a browser.
 4. Project-scoped state: projects are detected from Codex workspace/thread metadata and filesystem paths.
-5. Workflow enforcement: important state transitions require evidence.
+5. Workflow enforcement: important state transitions require state consistency, scale checks, and unresolved blocker checks.
 6. SDD + VDD by default: specs and visual artifacts are first-class.
 7. Subagent-friendly: tasks can be split into bounded ownership units with independent context.
-8. Quality over activity: progress is based on completed gates and evidence, not token volume.
+8. Quality over activity: progress is based on task state, scale discipline, user decisions, and blockers, not token volume.
 9. Scale-aware: work is sized before execution so tasks, files, and agent assignments stay balanced.
 
 ## 4. Non-Goals
@@ -118,7 +118,7 @@ Ardex aligns with current Codex integration surfaces:
 2. Hooks live next to Codex config layers, usually `~/.codex/hooks.json`, `~/.codex/config.toml`, `<repo>/.codex/hooks.json`, or `<repo>/.codex/config.toml`.
 3. Custom agents live in `~/.codex/agents` or `<repo>/.codex/agents`.
 4. User-level Codex config lives in `~/.codex/config.toml`; project-scoped override lives in `<repo>/.codex/config.toml`.
-5. `codex exec --json` emits JSONL events that can later be adapted into Ardex evidence.
+5. `codex exec --json` already emits command/file/test events; Ardex should reference or summarize those only when Codex cannot preserve the context itself.
 
 Ardex must treat Codex config writes as managed edits:
 
@@ -1074,10 +1074,10 @@ Event shape:
 
 MVP screens:
 
-1. Project list: id, name, path, active session count.
+1. Project command switcher: searchable non-archived projects with clean name, path, and id.
 2. Project dashboard: current goal, session status, runtime, active task.
 3. Feature map: features, importance, estimated weight, toy output status.
-4. Task board: ordered tasks with progress, priority, importance, quality gate.
+4. Task board: ordered tasks with read-only progress/status/owner and user-editable priority.
 5. Task detail: content, evidence, asks, advisor notes.
 6. Ask inbox: open user questions with attached images/files.
 7. Evidence gallery: screenshots, URLs, command/test summaries.
@@ -1088,11 +1088,14 @@ UX requirements:
 1. Progress visible in first viewport.
 2. Active task and blocker visible without clicking.
 3. Every `done` task must show why it is done.
-4. Visual work must show screenshot or runnable URL.
-5. User can reorder priority from UI.
-6. User can answer asks from UI.
-7. User can see when one task or file dominates the roadmap.
-8. User can approve or waive scale recommendations with a reason.
+4. Visual work should show screenshot, generated image, prototype, or runnable URL when such artifact is attached.
+5. User can add a task through a modal with title, content, priority, importance, owner hint, and quality-gate label.
+6. User can reorder priority from UI.
+7. User can answer asks from UI.
+8. User can see when one task or file dominates the roadmap.
+9. User can approve or waive scale recommendations with a reason.
+10. Realtime refresh must not steal focus from inputs, textareas, selects, project search, or task modal fields.
+11. Meaningless disabled controls are not allowed; controls must either mutate state or be rendered as read-only status.
 
 ## 11.1 UI Acceptance Spec
 
@@ -1101,10 +1104,10 @@ Project dashboard first viewport:
 1. Header: project name, path, daemon status, live connection status.
 2. Goal strip: current goal, session status, mode, runtime.
 3. Active work: current task, progress, quality gate, owner, next expected action.
-4. Blocker card: open asks, stale waivers, missing evidence, or scale blocks.
-5. Gate summary: scale, spec, test, visual, demo, readiness.
-6. Latest evidence: last screenshot, URL, test result, or command summary.
-7. Primary actions: answer ask, open task, run scale check, open demo.
+4. Blocker card: open asks, stale waivers, paused work, or scale blocks.
+5. Gate summary: scale, spec, visual, demo, readiness labels.
+6. Latest outputs: screenshot, generated image, URL, prototype, or manual QA note when attached.
+7. Primary actions: answer ask, add task, reorder priority, run scale check, open demo.
 
 Empty states:
 
@@ -1338,14 +1341,13 @@ Hook install:
 MVP hook events:
 
 1. `UserPromptSubmit`: record prompt start and refresh session statement.
-2. `PostToolUse`: collect evidence candidates from shell commands and file edits.
-3. `Stop`: block or warn when active task has missing gate evidence or stale scale findings.
+2. `Stop`: block or warn when hard Ardex state gates fail, such as open asks, paused current work, or stale scale findings.
 
 Hook policy:
 
-1. `PostToolUse` never claims completed work automatically.
-2. `PostToolUse` may add evidence candidates with `status=candidate`.
-3. `Stop` may block final response only when a hard gate is violated.
+1. Ardex does not install `PostToolUse` by default.
+2. Ardex must not auto-record command/file evidence from every tool call.
+3. `Stop` may block final response only when a hard Ardex state gate is violated.
 4. Hooks must not run network calls.
 5. Hooks must finish quickly; target max runtime is `500ms`.
 
@@ -1440,12 +1442,12 @@ user
 Gate types:
 
 1. `none`: planning or note task.
-2. `scale`: needs scale report or recorded waiver.
-3. `spec`: needs spec artifact.
-4. `test`: needs test/command evidence.
-5. `visual`: needs screenshot/URL evidence.
-6. `demo`: needs runnable URL or documented local command.
-7. `review`: needs review note and resolved issues.
+2. `scale`: scale-sensitive task.
+3. `spec`: spec-sensitive task.
+4. `test`: test-sensitive task.
+5. `visual`: visual-sensitive task.
+6. `demo`: demo-sensitive task.
+7. `review`: review-sensitive task.
 
 Default mapping:
 
@@ -1458,26 +1460,22 @@ Default mapping:
 
 ## 16.1 Gate Enforcement Matrix
 
-Gate failures are hard failures by default. Use `--waive --reason` only when the user or project policy explicitly permits it.
+Quality gate labels are routing and UX hints by default. Hard failures are reserved for Ardex-only missing controls: progress, paused state, open asks, and scale blocks.
 
 | Operation | Required condition | Failure code |
 | --- | --- | --- |
 | `session set status scaling` | goal or selected task exists | `TRANSITION_REJECTED` |
 | `session set status specifying` | latest scale report exists, or scale waiver exists | `SCALE_SPLIT_REQUIRED` |
 | `session set status implementing` | no unsplit estimate `>13`; no blocking file finding; current task exists | `SCALE_BLOCKING_FINDING` |
-| `task done` with `quality_gate=none` | `progress == 1` | `TRANSITION_REJECTED` |
-| `task done` with `quality_gate=scale` | accepted scale report or waiver evidence exists | `QUALITY_GATE_MISSING_EVIDENCE` |
-| `task done` with `quality_gate=spec` | accepted spec/artifact evidence exists | `QUALITY_GATE_MISSING_EVIDENCE` |
-| `task done` with `quality_gate=test` | at least one accepted `test` evidence with `payload.pass=true` | `QUALITY_GATE_FAILED_EVIDENCE` |
-| `task done` with `quality_gate=visual` | accepted screenshot or URL evidence exists | `QUALITY_GATE_MISSING_EVIDENCE` |
-| `task done` with `quality_gate=demo` | accepted runnable URL or command transcript exists | `QUALITY_GATE_MISSING_EVIDENCE` |
-| `task done` with `quality_gate=review` | accepted review note exists and unresolved findings count is `0` | `QUALITY_GATE_FAILED_EVIDENCE` |
-| `session done` | no open tasks; no open asks; final evidence exists | `TRANSITION_REJECTED` |
+| `task done` | `progress == 1` and task is not paused/dropped | `TRANSITION_REJECTED` |
+| `task done` while latest scale has blocking findings | blocking findings waived or resolved | `SCALE_BLOCKING_FINDING` |
+| `task done` with open project asks | no open asks | `TRANSITION_REJECTED` |
+| `session done` | no open tasks; no open asks | `TRANSITION_REJECTED` |
 
 Waiver rules:
 
 1. Waiver requires `--reason` with at least 20 characters.
-2. Waiver is stored as evidence type `note` or on the relevant finding row.
+2. Waiver is stored on the relevant finding row, not as generic evidence unless the user explicitly asks.
 3. Waiver must record actor, target, reason, and current target hash when available.
 4. Stale waiver cannot satisfy a gate.
 
@@ -1673,8 +1671,10 @@ UI e2e:
 Codex integration smoke:
 
 1. Installed skill appears in Codex skill list after restart or reload.
-2. `Stop` hook reports missing evidence for active gated task.
-3. `PostToolUse` creates command/file evidence candidates without marking work done.
+2. Running `ardex init` repeatedly leaves exactly one Ardex entry per managed hook event.
+3. `UserPromptSubmit` hook injects current statement context.
+4. `Stop` hook reports hard Ardex blockers.
+5. No Ardex-managed `PostToolUse` hook is installed by default.
 
 ## 22. Autonomous Production Scope
 
@@ -1689,6 +1689,10 @@ Hooks must degrade gracefully:
 1. Try `ardex check --json`.
 2. If unavailable, run `ardex start --json`.
 3. If start fails, allow the Codex turn to continue and emit short diagnostic context instead of crashing the hook.
+
+Hook installation must be idempotent. `ardex init` removes stale Ardex-managed hook entries for `UserPromptSubmit`, `Stop`, and legacy `PostToolUse` before installing the current entries, and it preserves non-Ardex hook entries.
+
+`UserPromptSubmit` injects the current Ardex statement into Codex context every turn. This is the fallback for cases where a Codex agent does not spontaneously follow the Ardex skill instructions. The injected context includes project, session, current task, owner, next expected action, blockers, and mandatory workflow rules.
 
 ### Codex Project/Thread Migration
 
@@ -1727,12 +1731,12 @@ Pause semantics:
 
 ### Task Edit/Delete/Reorder
 
-Task edit, delete, and priority reorder must be available from both CLI and UI.
+Task edit, delete, and priority reorder must be available from CLI/API. The dashboard exposes task creation and priority reorder as user-facing mutations; status, progress, owner, pause/resume, done, and delete are agent-owned controls.
 
 1. `task <id> set priority N` shifts other priorities and leaves no duplicates.
 2. `task <id> delete` drops the task, compacts priorities, clears session references, and records a delete event before removal.
-3. UI mutations use the same repository functions as CLI.
-4. SSE updates must show reorder/delete without reload.
+3. UI priority updates use the same repository functions as CLI.
+4. SSE updates must show create/reorder/delete/status/progress changes without reload and without stealing focused input.
 
 ### Subagent Ownership
 
@@ -1742,7 +1746,7 @@ Task owner is a first-class routing hint:
 2. `subagent:<role>`: work should be delegated to a subagent role such as `explorer`, `worker`, `reviewer`, or custom role.
 3. `user`: blocked on user action.
 
-Dashboard must show owner on every task and support owner reassignment. Scale recommendations may set owner automatically when generating split tasks.
+Dashboard must show owner on every task. Owner reassignment is CLI/API controlled so Codex or scale split can route work without turning the user dashboard into an agent control panel. Scale recommendations may set owner automatically when generating split tasks.
 
 ### Ask Answer Resume Loop
 
@@ -1754,27 +1758,18 @@ When an ask is answered:
 4. Dashboard shows the answered ask and the resumed next action immediately through SSE.
 5. Codex startup/Stop hooks read `ardex statement --json` and continue from `resume:<task_id>` instead of asking the same question again.
 
-### SDD/VDD Artifact Gate
+### SDD/VDD Context Artifacts
 
-Spec-driven and visual-driven tasks must have proof artifacts before done.
+Spec-driven and visual-driven tasks may attach external artifacts, but Ardex must not require artifacts that Codex already tracks in the transcript.
 
-Required evidence types:
+Optional artifact types:
 
-1. `spec`: spec, acceptance criteria, or implementation plan artifact.
-2. `acceptance`: checked acceptance criteria.
-3. `screenshot`: rendered UI or generated image.
-4. `browser_diff`: browser comparison, screenshot diff, or manual visual diff note.
-5. `prototype`: runnable toy/demo scenario output.
+1. `note`: user decision, manual QA note, or handoff summary.
+2. `url`: demo, deploy preview, or external reference.
+3. `screenshot` / `generated_image`: visual artifact that is useful in the dashboard.
+4. `prototype`: runnable toy/demo scenario output outside Codex transcript.
 
-Gate matrix:
-
-1. `quality_gate=spec`: requires accepted `spec` or `acceptance` evidence.
-2. `quality_gate=visual`: requires accepted `screenshot` and accepted `browser_diff` or `url` evidence.
-3. `quality_gate=demo`: requires accepted `prototype` or `url` evidence.
-4. `quality_gate=test`: requires accepted `test` evidence with `pass=true`.
-5. SDD/VDD session done requires at least one final session evidence item: `spec`, `prototype`, `screenshot`, `url`, or `acceptance`.
-
-Generated images are stored as `generated_image` evidence with `payload.path` or `payload.url`. Dashboard renders HTTP image URLs inline and lists local artifact paths safely.
+Generated images may be stored as `generated_image` evidence with `payload.path` or `payload.url`. Dashboard renders HTTP image URLs inline and lists local artifact paths safely.
 
 ### Scale-Based Roadmap Split And Assignment
 
@@ -1791,11 +1786,10 @@ Scale reports must drive planning, not only blocking.
 Before `task done`, Ardex runs a deterministic checklist:
 
 1. Progress is `1`.
-2. Required gate evidence exists and is accepted.
-3. Latest scale report is present and not blocking implementation.
-4. Open asks do not target the task.
-5. SDD/VDD tasks have spec/visual/demo artifacts where required.
-6. Runtime/pause state is coherent.
+2. Latest scale report is not blocking implementation.
+3. Open asks do not target the task.
+4. Runtime/pause state is coherent.
+5. `quality_gate` is shown as an advisory label, not an evidence requirement.
 
 The checklist is returned by `task <id> checklist --json`, shown in the dashboard, and stored as a `checklist` task event when `done` is attempted.
 
@@ -1858,6 +1852,6 @@ Phase 7: Autonomous production harness
 2. Add Codex project/thread migration adapter.
 3. Add task runtime events, pause/resume, edit/delete/reorder, and owner assignment.
 4. Add ask answered resume loop.
-5. Add SDD/VDD artifact evidence types and production checklist.
+5. Add optional SDD/VDD artifact display and lightweight production checklist.
 6. Add scale split to roadmap tasks with owner routing.
 7. Add generated image/scenario output panels to dashboard.

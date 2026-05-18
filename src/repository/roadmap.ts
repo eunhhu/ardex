@@ -32,7 +32,7 @@ export function splitTaskFromScale(db: Database, projectRef: string, taskRef: st
       content: [
         `Generated from scale report ${report.estimate.alias}.`,
         `Parent task: ${parent.alias}.`,
-        `Target slice ${index + 1}/${partCount}. Keep implementation bounded and record evidence before done.`,
+        `Target slice ${index + 1}/${partCount}. Keep implementation bounded and update Ardex state before done.`,
       ].join("\n"),
       priority: parent.priority + index + 1,
       importance: parent.importance,

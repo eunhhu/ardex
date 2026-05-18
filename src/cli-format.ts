@@ -20,6 +20,7 @@ export function projectSummary(project: Project): Record<string, unknown> {
     name: project.name,
     path: project.path,
     defaultWorkflow: project.defaultWorkflow,
+    archivedAt: project.archivedAt,
   };
 }
 
@@ -184,7 +185,7 @@ export function usageText(): string {
     "  stop                 Stop local daemon",
     "  check                Check daemon health",
     "  status               Show daemon status",
-    "  project ls|add|show|current|migrate-codex",
+    "  project ls|add|show|current|rename|archive|restore|migrate-codex",
     "  session ls|current|start|set|done",
     "  task ls|add|check|claim|pause|resume|assign|delete|done|events|checklist|<id> set",
     "  evidence add|ls|<id> accept|reject|check",

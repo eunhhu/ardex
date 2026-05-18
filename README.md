@@ -70,16 +70,18 @@ bun run index.ts -p p_001 task t_001 events --json
 bun run index.ts -p p_001 statement --json
 ```
 
-## Phase 2 Commands
+## Optional Artifact Commands
 
 ```bash
-bun run index.ts -p p_001 evidence add test --task t_001 --cmd "bun test" --pass true --summary "passed"
-bun run index.ts -p p_001 evidence add screenshot --task t_001 --path ./shot.png --status candidate
+bun run index.ts -p p_001 evidence add url --task t_001 --url http://localhost:3000 --summary "local demo"
+bun run index.ts -p p_001 evidence add note --task t_001 --summary "user approved compact layout"
 bun run index.ts -p p_001 evidence e_002 accept
 bun run index.ts -p p_001 evidence ls --task t_001 --json
 bun run index.ts -p p_001 ask "Which UX direction?"
 bun run index.ts -p p_001 ask a_001 answer "Use compact dashboard"
 ```
+
+Ardex evidence is optional. Do not duplicate Codex command logs, file diffs, or test output. Use evidence only for user decisions, external URLs, manual QA notes, deploy links, and artifacts Codex cannot reconstruct from its own transcript.
 
 ## Phase 3 Commands
 
@@ -111,9 +113,11 @@ The daemon serves a local dashboard, JSON dashboard snapshots, and SSE updates. 
 `ardex init` installs:
 
 - `$HOME/.agents/skills/ardex/SKILL.md`
+- `$HOME/.ardex/hooks/user-prompt-context.mjs`
 - `$HOME/.ardex/hooks/stop-check.mjs`
-- `$HOME/.ardex/hooks/post-tool-use-evidence.mjs`
-- `$HOME/.codex/hooks.json` entries for `Stop` and `PostToolUse`
+- `$HOME/.codex/hooks.json` entries for `UserPromptSubmit` and `Stop`
+
+`ardex init` is idempotent. It removes stale Ardex-managed hook entries before writing the current entries, while preserving non-Ardex hooks.
 
 For tests or isolated installs:
 
@@ -124,16 +128,16 @@ ARDEX_CODEX_HOME=/tmp/codex \
 bun run index.ts init
 ```
 
-Dashboard controls support session start/status/done, task add/claim/progress/done, scale check/waiver, ask answer, and evidence accept/reject.
+Dashboard controls support searchable project switching, session start, detailed task creation, priority reorder, scale check/split/waiver, ask answer, and optional artifact accept/reject. Task status, progress, pause/resume, done, delete, and owner assignment are agent-owned CLI/API controls, so the dashboard shows them as state instead of casual buttons.
 
 Autonomous workflow controls now also include:
 
 - daemon auto-start for stateful CLI/hook paths
+- prompt-time Ardex statement injection through `UserPromptSubmit`
 - `project migrate-codex` for best-effort `$HOME/.codex` project migration
 - task pause/resume/delete/owner assignment with runtime and event history
 - ask answer resume markers through `statement.nextExpectedAction`
-- SDD/VDD artifact evidence: `spec`, `acceptance`, `generated_image`, `browser_diff`, `prototype`
-- production checklist before `task done`
+- lightweight checklist before `task done`
 - scale-based child task generation with `subagent:<role>` owner routing
 - dashboard output panel for generated images, screenshots, prototypes, URLs, and browser diffs
 

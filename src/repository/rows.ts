@@ -7,6 +7,7 @@ export type ProjectRow = {
   name: string;
   codex_project_key: string | null;
   default_workflow: string;
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -141,6 +142,7 @@ export function projectFromRow(row: ProjectRow): Project {
     name: row.name,
     codexProjectKey: row.codex_project_key,
     defaultWorkflow: row.default_workflow,
+    archivedAt: row.archived_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

@@ -7,7 +7,7 @@ type Migration = {
   sql: string;
 };
 
-export const LATEST_SCHEMA_VERSION = 3;
+export const LATEST_SCHEMA_VERSION = 4;
 
 const migrations: Migration[] = [
   {
@@ -284,6 +284,14 @@ const migrations: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_tasks_project_status_priority ON tasks(project_id, status, priority);
       CREATE INDEX IF NOT EXISTS idx_evidence_target ON evidence(target_type, target_id, type);
       CREATE INDEX IF NOT EXISTS idx_task_events_project_task ON task_events(project_id, task_id, created_at);
+    `,
+  },
+  {
+    version: 4,
+    name: "project_archive_metadata",
+    sql: `
+      ALTER TABLE projects ADD COLUMN archived_at TEXT;
+      CREATE INDEX IF NOT EXISTS idx_projects_archived_path ON projects(archived_at, path);
     `,
   },
 ];
