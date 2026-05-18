@@ -133,7 +133,7 @@ main {
 
   .strip-state,
   .strip-item {
-    flex: 1 1 128px;
+    flex: 1 1 0;
   }
 
   .strip-goal,

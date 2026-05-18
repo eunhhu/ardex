@@ -89,7 +89,7 @@ function renderSessionStrip(data, session, task) {
   const strip = document.getElementById("sessionStrip");
   if (!strip) return;
   if (!data?.project) {
-    strip.innerHTML = '<span class="strip-state idle">Idle</span><span class="strip-item"><b>Session</b>none</span><span class="strip-item"><b>Goal</b>no project</span>';
+    strip.innerHTML = '<span class="strip-state idle"><span class="strip-value">Idle</span></span><span class="strip-item"><b>Session</b><span class="strip-value">none</span></span><span class="strip-item"><b>Goal</b><span class="strip-value">no project</span></span>';
     return;
   }
   const agent = session?.agent || data.statement?.session?.agent || { state: "idle", staleSeconds: null };
@@ -104,17 +104,17 @@ function renderSessionStrip(data, session, task) {
   strip.innerHTML =
     '<span class="strip-state ' +
     stateClass +
-    '">' +
+    '"><span class="strip-value">' +
     h(stateText + seenText) +
-    '</span><span class="strip-item"><b>Session</b>' +
+    '</span></span><span class="strip-item"><b>Session</b><span class="strip-value">' +
     h(sessionStatus) +
-    '</span><span class="strip-item strip-goal"><b>Goal</b>' +
+    '</span></span><span class="strip-item strip-goal"><b>Goal</b><span class="strip-value">' +
     h(goal) +
-    '</span><span class="strip-item strip-task"><b>Task</b>' +
+    '</span></span><span class="strip-item strip-task"><b>Task</b><span class="strip-value">' +
     h(taskText) +
-    '</span><span class="strip-item"><b>Runtime</b>' +
+    '</span></span><span class="strip-item"><b>Runtime</b><span class="strip-value">' +
     h(fmtRuntime(runtime)) +
-    "</span>";
+    "</span></span>";
 }
 
 function renderFocusCard(data, session, activeTask, review) {
