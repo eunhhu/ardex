@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { realpath } from "node:fs/promises";
 import { basename, isAbsolute, relative, resolve } from "node:path";
-import { notFound } from "../errors.ts";
+import { notFound, usageError } from "../errors.ts";
 import { createId, nextAlias } from "../ids.ts";
 import { type Project } from "./types.ts";
 import { type ProjectRow, projectFromRow } from "./rows.ts";
@@ -29,7 +29,12 @@ export async function addProject(db: Database, inputPath: string): Promise<Proje
 }
 
 export function listProjects(db: Database): Project[] {
-  const rows = db.query("SELECT * FROM projects ORDER BY path ASC").all() as ProjectRow[];
+  const rows = db.query("SELECT * FROM projects WHERE archived_at IS NULL ORDER BY name ASC, path ASC").all() as ProjectRow[];
+  return rows.map(projectFromRow);
+}
+
+export function listAllProjects(db: Database): Project[] {
+  const rows = db.query("SELECT * FROM projects ORDER BY archived_at IS NOT NULL ASC, name ASC, path ASC").all() as ProjectRow[];
   return rows.map(projectFromRow);
 }
 
@@ -61,6 +66,31 @@ export async function currentProject(db: Database, cwd = process.cwd()): Promise
     throw notFound("No Ardex project matches current directory.", { cwd: cwdPath });
   }
   return project;
+}
+
+export function setProjectName(db: Database, projectRef: string, name: string): Project {
+  const cleanName = name.trim();
+  if (cleanName.length === 0) {
+    throw usageError("Project name cannot be empty.");
+  }
+  const project = requireProject(db, projectRef);
+  const now = new Date().toISOString();
+  db.query("UPDATE projects SET name = ?, updated_at = ? WHERE id = ?").run(cleanName, now, project.id);
+  return requireProject(db, project.id);
+}
+
+export function archiveProject(db: Database, projectRef: string): Project {
+  const project = requireProject(db, projectRef);
+  const now = new Date().toISOString();
+  db.query("UPDATE projects SET archived_at = COALESCE(archived_at, ?), updated_at = ? WHERE id = ?").run(now, now, project.id);
+  return requireProject(db, project.id);
+}
+
+export function restoreProject(db: Database, projectRef: string): Project {
+  const project = requireProject(db, projectRef);
+  const now = new Date().toISOString();
+  db.query("UPDATE projects SET archived_at = NULL, updated_at = ? WHERE id = ?").run(now, project.id);
+  return requireProject(db, project.id);
 }
 
 async function canonicalPath(path: string): Promise<string> {

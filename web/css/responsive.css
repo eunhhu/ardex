@@ -1,0 +1,36 @@
+@media (max-width: 960px) {
+  .summary-grid,
+  .work-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .project-switcher,
+  select,
+  .project-button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  main {
+    padding: 12px;
+  }
+
+  .summary-card {
+    min-height: 96px;
+  }
+
+  .ask-form,
+  .scale-form,
+  .waive-form,
+  .stack-form,
+  .priority-form,
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}

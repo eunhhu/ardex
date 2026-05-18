@@ -13,10 +13,16 @@
         <span>Live Session</span>
       </div>
       <div class="project-switcher">
-        <select id="projectSelect" aria-label="Project"></select>
+        <button id="projectButton" class="project-button" type="button" aria-haspopup="dialog">Select project</button>
         <span id="connection" class="connection">offline</span>
       </div>
     </header>
+    <div id="projectMenu" class="command-menu" hidden>
+      <div class="command-panel" role="dialog" aria-label="Projects">
+        <input id="projectSearch" autocomplete="off" placeholder="Search projects">
+        <div id="projectList" class="command-list"></div>
+      </div>
+    </div>
     <main>
       <div id="errorBanner" class="error-banner" hidden></div>
       <section class="summary-grid" aria-label="Session summary">
@@ -29,7 +35,10 @@
         <section class="panel task-panel">
           <div class="panel-head">
             <h2>Tasks</h2>
-            <span id="taskCount" class="muted"></span>
+            <div class="panel-actions">
+              <span id="taskCount" class="muted"></span>
+              <button id="openTaskModal" type="button">Add</button>
+            </div>
           </div>
           <div id="tasks"></div>
         </section>
@@ -65,6 +74,36 @@
         </aside>
       </section>
     </main>
+    <dialog id="taskModal" class="modal">
+      <form method="dialog" class="modal-card" data-add-task-form>
+        <div class="modal-head">
+          <h2>Add task</h2>
+          <button class="secondary icon-button" value="cancel" type="button" data-close-task-modal>×</button>
+        </div>
+        <label>Title <input name="title" autocomplete="off" required></label>
+        <label>Content <textarea name="content" rows="5"></textarea></label>
+        <div class="form-grid">
+          <label>Priority <input name="priority" type="number" min="1" step="1"></label>
+          <label>Importance <input name="importance" type="number" min="0" max="1" step="0.1" value="0.5"></label>
+          <label>Owner <input name="owner" value="main"></label>
+          <label>Gate
+            <select name="qualityGate">
+              <option value="none">none</option>
+              <option value="scale">scale</option>
+              <option value="spec">spec</option>
+              <option value="visual">visual</option>
+              <option value="test">test</option>
+              <option value="demo">demo</option>
+              <option value="review">review</option>
+            </select>
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button class="secondary" type="button" data-close-task-modal>Cancel</button>
+          <button type="submit">Create</button>
+        </div>
+      </form>
+    </dialog>
     <script type="module" src="/app.js"></script>
   </body>
 </html>

@@ -1074,10 +1074,10 @@ Event shape:
 
 MVP screens:
 
-1. Project list: id, name, path, active session count.
+1. Project command switcher: searchable non-archived projects with clean name, path, and id.
 2. Project dashboard: current goal, session status, runtime, active task.
 3. Feature map: features, importance, estimated weight, toy output status.
-4. Task board: ordered tasks with progress, priority, importance, quality gate.
+4. Task board: ordered tasks with read-only progress/status/owner and user-editable priority.
 5. Task detail: content, evidence, asks, advisor notes.
 6. Ask inbox: open user questions with attached images/files.
 7. Evidence gallery: screenshots, URLs, command/test summaries.
@@ -1088,11 +1088,14 @@ UX requirements:
 1. Progress visible in first viewport.
 2. Active task and blocker visible without clicking.
 3. Every `done` task must show why it is done.
-4. Visual work must show screenshot or runnable URL.
-5. User can reorder priority from UI.
-6. User can answer asks from UI.
-7. User can see when one task or file dominates the roadmap.
-8. User can approve or waive scale recommendations with a reason.
+4. Visual work should show screenshot, generated image, prototype, or runnable URL when such artifact is attached.
+5. User can add a task through a modal with title, content, priority, importance, owner hint, and quality-gate label.
+6. User can reorder priority from UI.
+7. User can answer asks from UI.
+8. User can see when one task or file dominates the roadmap.
+9. User can approve or waive scale recommendations with a reason.
+10. Realtime refresh must not steal focus from inputs, textareas, selects, project search, or task modal fields.
+11. Meaningless disabled controls are not allowed; controls must either mutate state or be rendered as read-only status.
 
 ## 11.1 UI Acceptance Spec
 
@@ -1101,10 +1104,10 @@ Project dashboard first viewport:
 1. Header: project name, path, daemon status, live connection status.
 2. Goal strip: current goal, session status, mode, runtime.
 3. Active work: current task, progress, quality gate, owner, next expected action.
-4. Blocker card: open asks, stale waivers, missing evidence, or scale blocks.
-5. Gate summary: scale, spec, test, visual, demo, readiness.
-6. Latest evidence: last screenshot, URL, test result, or command summary.
-7. Primary actions: answer ask, open task, run scale check, open demo.
+4. Blocker card: open asks, stale waivers, paused work, or scale blocks.
+5. Gate summary: scale, spec, visual, demo, readiness labels.
+6. Latest outputs: screenshot, generated image, URL, prototype, or manual QA note when attached.
+7. Primary actions: answer ask, add task, reorder priority, run scale check, open demo.
 
 Empty states:
 
@@ -1728,12 +1731,12 @@ Pause semantics:
 
 ### Task Edit/Delete/Reorder
 
-Task edit, delete, and priority reorder must be available from both CLI and UI.
+Task edit, delete, and priority reorder must be available from CLI/API. The dashboard exposes task creation and priority reorder as user-facing mutations; status, progress, owner, pause/resume, done, and delete are agent-owned controls.
 
 1. `task <id> set priority N` shifts other priorities and leaves no duplicates.
 2. `task <id> delete` drops the task, compacts priorities, clears session references, and records a delete event before removal.
-3. UI mutations use the same repository functions as CLI.
-4. SSE updates must show reorder/delete without reload.
+3. UI priority updates use the same repository functions as CLI.
+4. SSE updates must show create/reorder/delete/status/progress changes without reload and without stealing focused input.
 
 ### Subagent Ownership
 
@@ -1743,7 +1746,7 @@ Task owner is a first-class routing hint:
 2. `subagent:<role>`: work should be delegated to a subagent role such as `explorer`, `worker`, `reviewer`, or custom role.
 3. `user`: blocked on user action.
 
-Dashboard must show owner on every task and support owner reassignment. Scale recommendations may set owner automatically when generating split tasks.
+Dashboard must show owner on every task. Owner reassignment is CLI/API controlled so Codex or scale split can route work without turning the user dashboard into an agent control panel. Scale recommendations may set owner automatically when generating split tasks.
 
 ### Ask Answer Resume Loop
 

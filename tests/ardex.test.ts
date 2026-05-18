@@ -12,6 +12,7 @@ import {
   addEvidence,
   addProject,
   addTask,
+  archiveProject,
   buildProductionChecklist,
   completeTask,
   deleteTask,
@@ -214,6 +215,35 @@ test("dashboard rejects cross-origin mutation and accepts local task create", as
   expect(envelope.ok).toBe(true);
 });
 
+test("dashboard serves split static assets", async () => {
+  const { paths, db } = await dbFixture();
+  db.close();
+
+  const app = await handleDashboardRequest(new Request("http://127.0.0.1:17373/app.js"), paths);
+  const module = await handleDashboardRequest(new Request("http://127.0.0.1:17373/js/render.js"), paths);
+  const css = await handleDashboardRequest(new Request("http://127.0.0.1:17373/css/forms.css"), paths);
+
+  expect(app?.status).toBe(200);
+  expect(app?.headers.get("content-type")).toContain("text/javascript");
+  expect(await app?.text()).toContain("from \"./js/render.js\"");
+  expect(module?.status).toBe(200);
+  expect(await module?.text()).toContain("renderProjectButton");
+  expect(css?.status).toBe(200);
+  expect(css?.headers.get("content-type")).toContain("text/css");
+});
+
+test("archived projects are hidden from dashboard project list", async () => {
+  const { paths, db, project } = await dbFixture();
+  try {
+    archiveProject(db, project.alias);
+  } finally {
+    db.close();
+  }
+
+  const projects = await getJson(paths, "/api/projects");
+  expect(projects.data.projects.some((item: any) => item.id === project.alias)).toBe(false);
+});
+
 test("scale block prevents implementing until finding is waived", async () => {
   const { db, project } = await dbFixture();
   try {
@@ -240,6 +270,7 @@ test("dashboard session and task mutation endpoints update snapshot", async () =
   await postJson(paths, `/api/projects/${project.alias}/session/start`, { goal: "dashboard flow" });
   const taskEnvelope = await postJson(paths, `/api/projects/${project.alias}/tasks`, { title: "dashboard task", qualityGate: "none" });
   const taskId = taskEnvelope.data.task.alias as string;
+  await postJson(paths, `/api/projects/${project.alias}/tasks/${taskId}/priority`, { priority: 1 });
   await postJson(paths, `/api/projects/${project.alias}/tasks/${taskId}/progress`, { progress: 1 });
   await postJson(paths, `/api/projects/${project.alias}/tasks/${taskId}/done`, {});
   const dashboard = await getJson(paths, `/api/projects/${project.alias}/dashboard`);

@@ -5,6 +5,7 @@ export type Project = {
   name: string;
   codexProjectKey: string | null;
   defaultWorkflow: string;
+  archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };

@@ -1,6 +1,4 @@
-import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dashboardAssetResponse } from "./dashboard-assets.ts";
 import { ArdexError, internalError, usageError } from "./errors.ts";
 import type { ArdexPaths } from "./paths.ts";
 import { VERSION, type JsonEnvelope } from "./output.ts";
@@ -15,6 +13,7 @@ import {
   runScaleCheckForDashboard,
   setSessionStatusForDashboard,
   setTaskOwnerForDashboard,
+  setTaskPriorityForDashboard,
   setTaskProgressForDashboard,
   splitTaskFromScaleForDashboard,
   startSessionForDashboard,
@@ -28,8 +27,6 @@ import {
   setEvidenceStatusForDashboard,
 } from "./dashboard-data.ts";
 
-const assetDir = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
-
 export async function handleDashboardRequest(request: Request, paths: ArdexPaths): Promise<Response | null> {
   const url = new URL(request.url);
   const segments = pathSegments(url.pathname);
@@ -38,14 +35,11 @@ export async function handleDashboardRequest(request: Request, paths: ArdexPaths
     if (isMutatingMethod(request.method)) {
       assertLocalMutation(request);
     }
-    if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
-      return await assetResponse("index.html", "text/html; charset=utf-8");
-    }
-    if (request.method === "GET" && url.pathname === "/styles.css") {
-      return await assetResponse("styles.css", "text/css; charset=utf-8");
-    }
-    if (request.method === "GET" && url.pathname === "/app.js") {
-      return await assetResponse("app.js", "text/javascript; charset=utf-8");
+    if (request.method === "GET") {
+      const asset = await dashboardAssetResponse(url.pathname);
+      if (asset !== null) {
+        return asset;
+      }
     }
     if (request.method === "GET" && url.pathname === "/favicon.ico") {
       return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
@@ -91,6 +85,7 @@ export async function handleDashboardRequest(request: Request, paths: ArdexPaths
           priority: optionalNumber(body, "priority"),
           importance: optionalNumber(body, "importance"),
           qualityGate: optionalString(body, "qualityGate"),
+          owner: optionalString(body, "owner"),
         }),
       });
     }
@@ -120,6 +115,17 @@ export async function handleDashboardRequest(request: Request, paths: ArdexPaths
           requiredSegment(segments, 2, "project"),
           requiredSegment(segments, 4, "task"),
           requiredNumber(body, "progress"),
+        ),
+      });
+    }
+    if (request.method === "POST" && segments[1] === "projects" && segments[3] === "tasks" && segments[5] === "priority") {
+      const body = await readJsonBody(request);
+      return dataResponse({
+        task: setTaskPriorityForDashboard(
+          paths,
+          requiredSegment(segments, 2, "project"),
+          requiredSegment(segments, 4, "task"),
+          requiredNumber(body, "priority"),
         ),
       });
     }
@@ -195,16 +201,6 @@ function pathSegments(pathname: string): string[] {
     .split("/")
     .filter((segment) => segment.length > 0)
     .map((segment) => decodeURIComponent(segment));
-}
-
-async function assetResponse(fileName: "index.html" | "styles.css" | "app.js", contentType: string): Promise<Response> {
-  const body = await readFile(join(assetDir, fileName), "utf8");
-  return new Response(body, {
-    headers: {
-      "cache-control": "no-store",
-      "content-type": contentType,
-    },
-  });
 }
 
 function requiredSegment(segments: string[], index: number, name: string): string {

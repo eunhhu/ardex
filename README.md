@@ -128,7 +128,7 @@ ARDEX_CODEX_HOME=/tmp/codex \
 bun run index.ts init
 ```
 
-Dashboard controls support session start/status/done, task add/claim/progress/done, scale check/waiver, ask answer, and optional artifact accept/reject.
+Dashboard controls support searchable project switching, session start, detailed task creation, priority reorder, scale check/split/waiver, ask answer, and optional artifact accept/reject. Task status, progress, pause/resume, done, delete, and owner assignment are agent-owned CLI/API controls, so the dashboard shows them as state instead of casual buttons.
 
 Autonomous workflow controls now also include:
 

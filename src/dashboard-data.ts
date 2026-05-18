@@ -46,6 +46,7 @@ type ProjectSummary = {
   name: string;
   path: string;
   defaultWorkflow: string;
+  archivedAt: string | null;
 };
 
 type SessionSummary = {
@@ -253,6 +254,7 @@ function projectSummary(project: Project): ProjectSummary {
     name: project.name,
     path: project.path,
     defaultWorkflow: project.defaultWorkflow,
+    archivedAt: project.archivedAt,
   };
 }
 
