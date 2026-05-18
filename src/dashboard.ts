@@ -1,7 +1,11 @@
 import { dashboardAssetResponse } from "./dashboard-assets.ts";
 import { ArdexError, internalError, usageError } from "./errors.ts";
+import { openDatabase } from "./db.ts";
 import type { ArdexPaths } from "./paths.ts";
+import { readFile, realpath } from "node:fs/promises";
+import { isAbsolute, resolve, sep } from "node:path";
 import { VERSION, type JsonEnvelope } from "./output.ts";
+import { requireProject } from "./repository.ts";
 import {
   addTaskForDashboard,
   claimTaskForDashboard,
@@ -56,6 +60,9 @@ export async function handleDashboardRequest(request: Request, paths: ArdexPaths
     }
     if (request.method === "GET" && segments[1] === "projects" && segments[3] === "dashboard") {
       return dataResponse(await buildDashboardSnapshot(paths, requiredSegment(segments, 2, "project")));
+    }
+    if (request.method === "GET" && segments[1] === "projects" && segments[3] === "artifacts") {
+      return artifactResponse(paths, requiredSegment(segments, 2, "project"), requiredStringParam(url, "path"));
     }
     if (request.method === "POST" && segments[1] === "projects" && segments[3] === "session" && segments[4] === "start") {
       const body = await readJsonBody(request);
@@ -153,12 +160,14 @@ export async function handleDashboardRequest(request: Request, paths: ArdexPaths
       segments[3] === "evidence" &&
       (segments[5] === "accept" || segments[5] === "reject")
     ) {
+      const body = await readJsonBody(request);
       const status = segments[5] === "accept" ? "accepted" : "rejected";
       const evidence = setEvidenceStatusForDashboard(
         paths,
         requiredSegment(segments, 2, "project"),
         requiredSegment(segments, 4, "evidence"),
         status,
+        optionalString(body, "comment"),
       );
       return dataResponse({ evidence });
     }
@@ -219,9 +228,51 @@ function requiredString(body: Record<string, unknown>, field: string): string {
   return value;
 }
 
+function requiredStringParam(url: URL, field: string): string {
+  const value = url.searchParams.get(field)?.trim() ?? "";
+  if (value.length === 0) {
+    throw usageError(`Query parameter ${field} is required.`, { field });
+  }
+  return value;
+}
+
 function optionalString(body: Record<string, unknown>, field: string): string | undefined {
   const value = body[field];
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+async function artifactResponse(paths: ArdexPaths, projectRef: string, rawPath: string): Promise<Response> {
+  const db = openDatabase(paths);
+  try {
+    const project = requireProject(db, projectRef);
+    const projectRoot = await realpath(project.path);
+    const candidate = isAbsolute(rawPath) ? rawPath : resolve(projectRoot, rawPath);
+    const resolved = await realpath(candidate);
+    if (resolved !== projectRoot && !resolved.startsWith(projectRoot + sep)) {
+      throw usageError("Artifact path must stay inside the project root.", { path: rawPath });
+    }
+    if (!/\.(png|jpe?g|gif|webp|avif)$/i.test(resolved)) {
+      throw usageError("Artifact preview supports image files only.", { path: rawPath });
+    }
+    const body = await readFile(resolved);
+    return new Response(body, {
+      headers: {
+        "content-type": imageContentType(resolved),
+        "cache-control": "no-store",
+      },
+    });
+  } finally {
+    db.close();
+  }
+}
+
+function imageContentType(path: string): string {
+  if (/\.png$/i.test(path)) return "image/png";
+  if (/\.jpe?g$/i.test(path)) return "image/jpeg";
+  if (/\.gif$/i.test(path)) return "image/gif";
+  if (/\.webp$/i.test(path)) return "image/webp";
+  if (/\.avif$/i.test(path)) return "image/avif";
+  return "application/octet-stream";
 }
 
 function requiredNumber(body: Record<string, unknown>, field: string): number {

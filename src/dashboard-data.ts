@@ -25,6 +25,7 @@ import {
   type Session,
   type Statement,
   type Task,
+  VISUAL_SCENARIO_CONFIRM_KIND,
 } from "./repository.ts";
 
 export type DashboardSnapshot = {
@@ -100,11 +101,17 @@ type EvidenceSummary = {
 type OutputSummary = {
   id: string;
   type: string;
+  status: string;
   taskRef: string | null;
   summary: string;
   path: string | null;
   url: string | null;
+  previewUrl: string | null;
   renderableImage: boolean;
+  visualScenario: boolean;
+  prompt: string | null;
+  reviewComment: string | null;
+  needsApproval: boolean;
   createdAt: string;
 };
 
@@ -175,7 +182,7 @@ export async function buildDashboardSnapshot(paths: ArdexPaths, projectRef?: str
       sessions: sessions.map((session) => sessionSummary(session, taskById)),
       tasks: tasks.map((task) => taskSummary(db, project.alias, task)),
       evidence: listEvidence(db, project.alias).map((item) => evidenceSummary(item, taskById, sessionById)),
-      outputs: listEvidence(db, project.alias).map((item) => outputSummary(item, taskById)).filter((item): item is OutputSummary => item !== null),
+      outputs: listEvidence(db, project.alias).map((item) => outputSummary(item, project, taskById)).filter((item): item is OutputSummary => item !== null),
       asks: listAsks(db, project.alias).map(askSummary),
       scale: {
         latest: latestScale === null ? null : scaleReportSummary(latestScale),
@@ -205,9 +212,10 @@ export function setEvidenceStatusForDashboard(
   projectRef: string,
   evidenceRef: string,
   status: "accepted" | "rejected",
+  comment?: string,
 ): EvidenceSummary {
   return mutateDb(paths, (db) => {
-    const evidence = setEvidenceStatus(db, projectRef, evidenceRef, status);
+    const evidence = setEvidenceStatus(db, projectRef, evidenceRef, status, { comment });
     const tasks = listTasks(db, projectRef);
     const sessions = listSessions(db, projectRef);
     return evidenceSummary(evidence, new Map(tasks.map((task) => [task.id, task])), new Map(sessions.map((session) => [session.id, session])));
@@ -311,13 +319,17 @@ function evidenceSummary(evidence: Evidence, taskById: Map<string, Task>, sessio
     targetRef: targetRef(evidence, taskById, sessionById),
     summary: evidence.summary,
     payload: evidence.payload,
-    media: outputSummary(evidence, taskById),
+    media: outputSummary(evidence, null, taskById),
     createdAt: evidence.createdAt,
   };
 }
 
-function outputSummary(evidence: Evidence, taskById: Map<string, Task>): OutputSummary | null {
-  if (evidence.status !== "accepted") {
+function outputSummary(evidence: Evidence, project: Project | null, taskById: Map<string, Task>): OutputSummary | null {
+  const visualScenario = evidence.payload["kind"] === VISUAL_SCENARIO_CONFIRM_KIND;
+  if (evidence.status !== "accepted" && !visualScenario) {
+    return null;
+  }
+  if (evidence.status === "rejected" && !visualScenario) {
     return null;
   }
   if (!["screenshot", "generated_image", "prototype", "url", "browser_diff"].includes(evidence.type)) {
@@ -329,16 +341,31 @@ function outputSummary(evidence: Evidence, taskById: Map<string, Task>): OutputS
     return null;
   }
   const source = url ?? path ?? "";
+  const previewUrl = renderableArtifactUrl(project, path);
+  const renderableRemote = /^https?:\/\//.test(source) && /\.(png|jpe?g|gif|webp|avif)(\?|$)/i.test(source);
   return {
     id: evidence.alias,
     type: evidence.type,
+    status: evidence.status,
     taskRef: evidence.targetType === "task" && evidence.targetId !== null ? taskById.get(evidence.targetId)?.alias ?? evidence.targetId : null,
     summary: evidence.summary,
     path,
     url,
-    renderableImage: /^https?:\/\//.test(source) && /\.(png|jpe?g|gif|webp|avif)(\?|$)/i.test(source),
+    previewUrl,
+    renderableImage: previewUrl !== null || renderableRemote,
+    visualScenario,
+    prompt: typeof evidence.payload["prompt"] === "string" ? evidence.payload["prompt"] : null,
+    reviewComment: typeof evidence.payload["reviewComment"] === "string" ? evidence.payload["reviewComment"] : null,
+    needsApproval: visualScenario && evidence.status === "candidate",
     createdAt: evidence.createdAt,
   };
+}
+
+function renderableArtifactUrl(project: Project | null, path: string | null): string | null {
+  if (project === null || path === null || !/\.(png|jpe?g|gif|webp|avif)$/i.test(path)) {
+    return null;
+  }
+  return `/api/projects/${encodeURIComponent(project.alias)}/artifacts?path=${encodeURIComponent(path)}`;
 }
 
 function askSummary(ask: Ask): AskSummary {

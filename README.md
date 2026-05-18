@@ -67,6 +67,7 @@ bun run index.ts -p p_001 task t_001 set progress 1
 bun run index.ts -p p_001 task t_001 checklist --json
 bun run index.ts -p p_001 task t_001 done
 bun run index.ts -p p_001 task t_001 events --json
+bun run index.ts -p p_001 task t_001 scenario --json
 bun run index.ts -p p_001 statement --json
 ```
 
@@ -74,8 +75,9 @@ bun run index.ts -p p_001 statement --json
 
 ```bash
 bun run index.ts -p p_001 evidence add url --task t_001 --url http://localhost:3000 --summary "local demo"
+bun run index.ts -p p_001 evidence add generated_image --task t_001 --path output/scenario.png --kind visual_scenario_confirm --status candidate --summary "expected UX scenario"
 bun run index.ts -p p_001 evidence add note --task t_001 --summary "user approved compact layout"
-bun run index.ts -p p_001 evidence e_002 accept
+bun run index.ts -p p_001 evidence e_002 accept --comment "approved direction"
 bun run index.ts -p p_001 evidence ls --task t_001 --json
 bun run index.ts -p p_001 ask "Which UX direction?"
 bun run index.ts -p p_001 ask a_001 answer "Use compact dashboard"
@@ -143,8 +145,9 @@ Autonomous workflow controls now also include:
 - task pause/resume/delete/owner assignment with runtime and event history
 - ask answer resume markers through `statement.nextExpectedAction`
 - lightweight checklist before `task done`
+- VDD visual scenario gate: `qualityGate=visual` and UX-impactful tasks must create a scenario prompt, attach an imagegen `generated_image` candidate with `kind=visual_scenario_confirm`, and get dashboard approval before implementation claim/done
 - scale-based child task generation with unique `subagent:<role>` owners and prompt-time delegation guidance
-- dashboard output panel for generated images, screenshots, prototypes, URLs, and browser diffs
+- dashboard output panel for generated images, screenshots, prototypes, URLs, browser diffs, and pending visual scenario approvals with review comments
 - session workflow sync on `statement`, scale, ask answer, claim, progress, pause/resume, delete, and done events so stale `planning` state is corrected before Codex plans
 - agent activity derived from session `lastSeenAt` and surfaced in CLI/API/dashboard as `running` or `idle`
 - sticky dashboard session strip with agent state, session status, goal, current task, and runtime visible while scrolling

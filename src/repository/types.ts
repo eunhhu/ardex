@@ -177,6 +177,18 @@ export type Statement = {
     blockingFindings: number;
     nextSplitRequired: boolean;
   };
+  visualScenario: {
+    required: boolean;
+    approved: boolean;
+    taskId: string;
+    promptEvidenceId: string | null;
+    imageEvidenceId: string | null;
+    pendingEvidenceIds: string[];
+    rejectedEvidenceIds: string[];
+    prompt: string | null;
+    nextAction: string | null;
+    detail: string;
+  } | null;
   subagents: {
     required: boolean;
     reason: string | null;

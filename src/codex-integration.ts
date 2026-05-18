@@ -186,6 +186,7 @@ Use Ardex CLI as source of truth for project/session/task state. Prefer stable J
 ## Work Loop
 
 - Before implementation, run \`ardex -p <project> scale check --path <target> --json\`.
+- For \`qualityGate=visual\` or UX-impactful tasks, run \`ardex -p <project> task <task> scenario --json\`, use imagegen to create the scenario image, attach it as candidate \`generated_image\` evidence with \`--kind visual_scenario_confirm\`, and wait for dashboard approval before claiming implementation.
 - Claim a task before editing: \`ardex -p <project> task <task> claim --json\`.
 - If a user-paused task exists, do not resume it unless the statement says \`resume:<task_id>\` or the user explicitly asks.
 - Respect task owner. If \`statement.subagents.required\` is true or a task owner starts with \`subagent:\`, treat that as an explicit Ardex delegation request: spawn/use a separate Codex subagent for that task when subagent tools are available. Main context coordinates, integrates, and verifies.
@@ -233,6 +234,10 @@ if (Array.isArray(data.blockers) && data.blockers.length > 0) {
 
 if (data.session?.status === "implementing" && data.scale?.nextSplitRequired === true) {
   output({ decision: "block", reason: "Ardex scale gate requires split or waiver before continuing implementation." });
+}
+
+if (data.visualScenario?.required === true && data.visualScenario?.approved !== true && data.currentTask) {
+  output({ decision: "block", reason: "Ardex visual scenario gate requires approved imagegen scenario before implementation can be treated as complete." });
 }
 
 output({ continue: true });
@@ -303,11 +308,12 @@ const lines = [
   "Agent activity: " + (data.session?.agent?.state || "idle") + " lastSeen=" + (data.session?.agent?.lastSeenAt || "none"),
   "Current task: " + (data.currentTask ? data.currentTask.id + " " + data.currentTask.status + " " + data.currentTask.title : "none"),
   "Owner: " + (data.currentTask?.owner || "none"),
+  "Visual scenario: " + visualScenarioSummary(data.visualScenario),
   "Subagents: " + subagentSummary(data.subagents),
   "Next: " + (data.nextExpectedAction || "none"),
   "Blockers: " + (Array.isArray(data.blockers) ? data.blockers.length : 0),
   "Mandatory flow: continue from the Ardex session/task above; do not re-plan from scratch unless no session/task exists.",
-  "Rules: check Ardex statement before work; claim/resume task before edits; keep task state current; use evidence only for external/user-visible artifacts; run checklist before done.",
+  "Rules: check Ardex statement before work; for visual/UX tasks create imagegen scenario and wait for Visible Outputs approval before implementation; claim/resume task before edits; keep task state current; use evidence only for external/user-visible artifacts; run checklist before done.",
   "Subagent rule: when Ardex lists pending subagent-owned tasks, treat it as an explicit delegation request; spawn one bounded subagent per task when available, and keep main context for coordination/integration."
 ];
 
@@ -354,6 +360,12 @@ function subagentSummary(plan) {
     .join(" | ");
   const suffix = plan.pending.length > 6 ? " | +" + (plan.pending.length - 6) + " more" : "";
   return "required; " + pending + suffix + "; " + (plan.instruction || "");
+}
+
+function visualScenarioSummary(state) {
+  if (!state || state.required !== true) return "none";
+  if (state.approved === true) return "approved " + (state.imageEvidenceId || "");
+  return (state.nextAction || "confirm_visual_scenario") + "; prompt=" + (state.promptEvidenceId || "missing") + "; pending=" + (state.pendingEvidenceIds || []).join(",");
 }
 
 function output(value) {

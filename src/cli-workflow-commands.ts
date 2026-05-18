@@ -123,7 +123,10 @@ export async function evidenceCommand(parsed: ParsedArgs): Promise<CommandSucces
           throw usageError("Unknown evidence command.", { action });
         }
         if (second === "accept" || second === "reject") {
-          const evidence = setEvidenceStatus(db, project.alias, action, second === "accept" ? "accepted" : "rejected");
+          const options = parseOptions(rest);
+          const evidence = setEvidenceStatus(db, project.alias, action, second === "accept" ? "accepted" : "rejected", {
+            comment: options.comment ?? options.reason,
+          });
           return success({ evidence: evidenceSummary(evidence) }, `Evidence ${evidence.alias}: ${evidence.status}`);
         }
         if (second === "check") {
@@ -184,6 +187,10 @@ function evidencePayload(type: string, options: Record<string, string>): Record<
   if (options.cmd !== undefined) payload["cmd"] = options.cmd;
   if (options.path !== undefined) payload["path"] = options.path;
   if (options.url !== undefined) payload["url"] = options.url;
+  if (options.kind !== undefined) payload["kind"] = options.kind;
+  if (options.prompt !== undefined) payload["prompt"] = options.prompt;
+  if (options.tool !== undefined) payload["tool"] = options.tool;
+  if (options.comment !== undefined) payload["comment"] = options.comment;
   if (options.pass !== undefined) payload["pass"] = options.pass === "true" || options.pass === "1" || options.pass === "yes";
   if (type === "test" && payload["pass"] === undefined) payload["pass"] = true;
   return payload;

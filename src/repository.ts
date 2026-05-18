@@ -3,6 +3,7 @@ export * from "./repository/projects.ts";
 export * from "./repository/sessions.ts";
 export * from "./repository/tasks.ts";
 export * from "./repository/evidence.ts";
+export * from "./repository/visual-scenarios.ts";
 export * from "./repository/asks.ts";
 export * from "./repository/scale.ts";
 export * from "./repository/roadmap.ts";

@@ -4,6 +4,7 @@ import { createId, nextAlias } from "../ids.ts";
 import { requireProject } from "./projects.ts";
 import { currentSession, findCurrentSessionId, syncSessionWorkflow } from "./sessions.ts";
 import { assertImplementationScaleGate } from "./scale.ts";
+import { assertVisualScenarioReadyForClaim, visualScenarioChecklistItem } from "./visual-scenarios.ts";
 import { type Task, type TaskEvent } from "./types.ts";
 import { type TaskEventRow, type TaskRow, taskEventFromRow, taskFromRow } from "./rows.ts";
 
@@ -159,6 +160,7 @@ export function claimTask(db: Database, projectRef: string, taskRef: string): Ta
 
   const session = currentSession(db, project.alias);
   assertImplementationScaleGate(db, project.id);
+  assertVisualScenarioReadyForClaim(db, project.id, task);
   const now = new Date().toISOString();
   db.query(
     `
@@ -393,6 +395,7 @@ export function buildProductionChecklist(db: Database, projectRef: string, taskR
       detail: `gate=${task.qualityGate}`,
     },
     scaleChecklistItem(db, project.id),
+    visualScenarioChecklistItem(db, project.id, task),
     {
       id: "open_asks",
       label: "No open project asks",

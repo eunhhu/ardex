@@ -3,6 +3,7 @@ import { requireProject } from "./projects.ts";
 import { getScaleSummary } from "./scale.ts";
 import { sessionAgentActivity } from "./sessions.ts";
 import { requireTask, taskRuntimeSeconds } from "./tasks.ts";
+import { visualScenarioState } from "./visual-scenarios.ts";
 import { type Session, type Statement, type Task } from "./types.ts";
 import { type SessionRow, type TaskRow, sessionFromRow, taskFromRow } from "./rows.ts";
 
@@ -24,6 +25,7 @@ export function buildStatement(db: Database, projectRef: string): Statement {
     .query("SELECT alias, question FROM asks WHERE project_id = ? AND status = 'open' ORDER BY created_at ASC")
     .all(project.id) as Array<{ alias: string; question: string }>;
   const scaleSummary = getScaleSummary(db, project.id);
+  const visualScenario = currentTask === null ? null : visualScenarioState(db, project.id, currentTask);
   const subagentRows = db
     .query(
       `
@@ -76,9 +78,10 @@ export function buildStatement(db: Database, projectRef: string): Statement {
       blockingFindings: scaleSummary.blockingFindings,
       nextSplitRequired: scaleSummary.nextSplitRequired,
     },
+    visualScenario,
     subagents: buildSubagentPlan(subagentTasks, scaleSummary.nextSplitRequired),
     blockers: blockerRows.map((row) => `${row.alias}: ${row.question}`),
-    nextExpectedAction: session?.nextExpectedAction ?? null,
+    nextExpectedAction: visualScenario?.nextAction ?? session?.nextExpectedAction ?? null,
   };
 }
 

@@ -81,6 +81,10 @@
   background: #fff;
 }
 
+.visual-scenario {
+  background: #fbfdfc;
+}
+
 details {
   border: 1px solid var(--line);
   border-radius: 6px;

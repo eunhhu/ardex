@@ -242,9 +242,43 @@ function renderVerificationLog(evidence) {
 
 function renderOutput(output) {
   const source = output.url || output.path || "";
-  const preview = output.renderableImage ? '<img class="output-img" alt="" src="' + h(source) + '">' : "";
+  const previewSource = output.previewUrl || source;
+  const preview = output.renderableImage ? '<img class="output-img" alt="" src="' + h(previewSource) + '">' : "";
   const link = output.url ? '<a href="' + h(output.url) + '" target="_blank" rel="noreferrer">' + h(output.url) + "</a>" : '<span class="mono">' + h(output.path) + "</span>";
-  return '<article class="item output-item">' + preview + '<div class="item-head"><div class="item-title">' + h(output.summary) + '</div><span class="pill good">' + h(output.type) + '</span></div><div class="meta">' + pill(output.id) + (output.taskRef ? pill("task " + output.taskRef) : "") + '</div><div class="subvalue">' + link + "</div></article>";
+  const level = output.status === "accepted" ? "good" : output.status === "rejected" ? "bad" : "warn";
+  const prompt =
+    output.visualScenario && output.prompt
+      ? '<details><summary>Scenario prompt</summary><pre class="mono">' + h(output.prompt) + "</pre></details>"
+      : "";
+  const comment = output.reviewComment ? '<div class="subvalue">Review: ' + h(output.reviewComment) + "</div>" : "";
+  const review = output.needsApproval
+    ? '<form class="output-review-form" data-output-review-form data-evidence-id="' +
+      h(output.id) +
+      '"><input name="comment" autocomplete="off" placeholder="Approval note or rejection reason"><button name="action" value="accept">Approve</button><button class="secondary" name="action" value="reject">Reject</button></form>'
+    : "";
+  return (
+    '<article class="item output-item ' +
+    (output.visualScenario ? "visual-scenario" : "") +
+    '">' +
+    preview +
+    '<div class="item-head"><div class="item-title">' +
+    h(output.summary) +
+    '</div><span class="pill ' +
+    level +
+    '">' +
+    h(output.visualScenario ? "scenario " + output.status : output.type) +
+    '</span></div><div class="meta">' +
+    pill(output.id) +
+    pill(output.type) +
+    (output.taskRef ? pill("task " + output.taskRef) : "") +
+    "</div><div class=\"subvalue\">" +
+    link +
+    "</div>" +
+    prompt +
+    comment +
+    review +
+    "</article>"
+  );
 }
 
 function renderScale(report) {

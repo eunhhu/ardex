@@ -7,7 +7,8 @@
 .scale-form,
 .waive-form,
 .stack-form,
-.priority-form {
+.priority-form,
+.output-review-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
@@ -19,9 +20,16 @@
 .scale-form input,
 .waive-form input,
 .stack-form input,
-.priority-form input {
+.priority-form input,
+.output-review-form input {
   width: 100%;
   padding: 0 10px;
+}
+
+.output-review-form {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  border: 0;
+  padding: 0;
 }
 
 .priority-form {

@@ -30,6 +30,7 @@
   .waive-form,
   .stack-form,
   .priority-form,
+  .output-review-form,
   .form-grid {
     grid-template-columns: 1fr;
   }

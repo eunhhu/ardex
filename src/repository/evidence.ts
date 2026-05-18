@@ -76,13 +76,24 @@ export function requireEvidence(db: Database, evidenceRef: string): Evidence {
   return evidenceFromRow(row);
 }
 
-export function setEvidenceStatus(db: Database, projectRef: string, evidenceRef: string, status: "accepted" | "rejected"): Evidence {
+export function setEvidenceStatus(
+  db: Database,
+  projectRef: string,
+  evidenceRef: string,
+  status: "accepted" | "rejected",
+  input: { comment?: string } = {},
+): Evidence {
   const project = requireProject(db, projectRef);
   const evidence = requireEvidence(db, evidenceRef);
   if (evidence.projectId !== project.id) {
     throw notFound("Evidence is not in selected project.", { projectRef, evidenceRef });
   }
-  db.query("UPDATE evidence SET status = ? WHERE id = ?").run(status, evidence.id);
+  const payload = sanitizeEvidencePayload({
+    ...evidence.payload,
+    reviewComment: input.comment ?? evidence.payload["reviewComment"],
+    reviewedAt: new Date().toISOString(),
+  });
+  db.query("UPDATE evidence SET status = ?, payload_json = ? WHERE id = ?").run(status, JSON.stringify(payload), evidence.id);
   return requireEvidence(db, evidence.id);
 }
 

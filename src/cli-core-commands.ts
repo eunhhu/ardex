@@ -20,6 +20,7 @@ import {
   currentSession,
   listProjects,
   restoreProject,
+  ensureVisualScenarioPrompt,
   listSessions,
   listTasks,
   pauseTask,
@@ -32,6 +33,7 @@ import {
   setTaskField,
   startSession,
   syncSessionWorkflow,
+  visualScenarioState,
 } from "./repository.ts";
 import type { ParsedArgs } from "./cli-types.ts";
 import { parseOptions } from "./cli-options.ts";
@@ -40,6 +42,7 @@ import {
   formatStatement,
   helpData,
   projectSummary,
+  evidenceSummary,
   sessionSummary,
   checklistSummary,
   taskEventSummary,
@@ -289,6 +292,16 @@ function taskItemCommand(db: Parameters<typeof requireTask>[0], projectAlias: st
   if (second === "checklist") {
     const checklist = buildProductionChecklist(db, projectAlias, first);
     return success({ checklist: checklistSummary(checklist) }, formatObject(checklistSummary(checklist)));
+  }
+  if (second === "scenario" || second === "visual-scenario") {
+    const project = requireProject(db, projectAlias);
+    const task = requireTask(db, first);
+    const options = parseOptions([third, ...rest].filter((item): item is string => item !== undefined));
+    const evidence = ensureVisualScenarioPrompt(db, project, task, options.prompt);
+    return success(
+      { evidence: evidenceSummary(evidence), visualScenario: visualScenarioState(db, project.id, task) },
+      formatObject(evidenceSummary(evidence)),
+    );
   }
   if (second === "done") {
     const task = completeTask(db, projectAlias, first);

@@ -19,6 +19,7 @@ import {
   completeTask,
   claimTask,
   deleteTask,
+  ensureVisualScenarioPrompt,
   listEvidence,
   listTaskEvents,
   listTasks,
@@ -26,6 +27,7 @@ import {
   pauseTask,
   resumeTask,
   setTaskOwner,
+  setEvidenceStatus,
   splitTaskFromScale,
   startSession,
   setTaskField,
@@ -310,6 +312,40 @@ test("evidence redacts secrets before storage", async () => {
   }
 });
 
+test("visual scenario gate blocks visual task claim until approved imagegen output exists", async () => {
+  const { db, project } = await dbFixture();
+  try {
+    startSession(db, project.alias, { goal: "visual gate" });
+    storeScaleReport(db, project.alias, await scanScale({ projectPath: project.path, paths: [] }));
+    const task = addTask(db, project.alias, { title: "dashboard layout polish", qualityGate: "visual" });
+
+    expect(() => claimTask(db, project.alias, task.alias)).toThrow("Visual scenario approval is required");
+
+    const prompt = ensureVisualScenarioPrompt(db, project, task);
+    expect(prompt.type).toBe("prototype");
+    expect(prompt.status).toBe("candidate");
+    expect(prompt.payload.kind).toBe("visual_scenario_prompt");
+    expect(() => claimTask(db, project.alias, task.alias)).toThrow("Visual scenario approval is required");
+
+    const candidate = addEvidence(db, project.alias, {
+      type: "generated_image",
+      targetType: "task",
+      targetRef: task.alias,
+      status: "candidate",
+      summary: "visual scenario candidate",
+      payload: { kind: "visual_scenario_confirm", path: "scenario.png", prompt: prompt.payload.prompt },
+    });
+    expect(() => claimTask(db, project.alias, task.alias)).toThrow("Visual scenario approval is required");
+
+    setEvidenceStatus(db, project.alias, candidate.alias, "accepted", { comment: "matches expected flow" });
+    expect(claimTask(db, project.alias, task.alias).status).toBe("active");
+    const checklist = buildProductionChecklist(db, project.alias, task.alias);
+    expect(checklist.items.find((item) => item.id === "visual_scenario_confirm")?.passed).toBe(true);
+  } finally {
+    db.close();
+  }
+});
+
 test("dashboard rejects cross-origin mutation and accepts local task create", async () => {
   const { paths, db, project } = await dbFixture();
   db.close();
@@ -390,14 +426,14 @@ test("dashboard session and task mutation endpoints update snapshot", async () =
   db.close();
 
   await postJson(paths, `/api/projects/${project.alias}/session/start`, { goal: "dashboard flow" });
-  const taskEnvelope = await postJson(paths, `/api/projects/${project.alias}/tasks`, { title: "dashboard task", qualityGate: "none" });
+  const taskEnvelope = await postJson(paths, `/api/projects/${project.alias}/tasks`, { title: "storage task", qualityGate: "none" });
   const taskId = taskEnvelope.data.task.alias as string;
   await postJson(paths, `/api/projects/${project.alias}/tasks/${taskId}/priority`, { priority: 1 });
   await postJson(paths, `/api/projects/${project.alias}/tasks/${taskId}/progress`, { progress: 1 });
   await postJson(paths, `/api/projects/${project.alias}/tasks/${taskId}/done`, {});
   const dashboard = await getJson(paths, `/api/projects/${project.alias}/dashboard`);
 
-  expect(dashboard.data.tasks[0].title).toBe("dashboard task");
+  expect(dashboard.data.tasks[0].title).toBe("storage task");
   expect(dashboard.data.tasks[0].status).toBe("done");
 });
 
@@ -430,6 +466,37 @@ test("dashboard pause resume owner and generated image outputs update snapshot",
   expect(dashboard.data.tasks[0].status).toBe("active");
   expect(dashboard.data.outputs.some((output: any) => output.type === "browser_diff")).toBe(true);
   expect(dashboard.data.outputs.some((output: any) => output.type === "generated_image" && output.renderableImage === true)).toBe(true);
+});
+
+test("dashboard shows visual scenario candidates and records review comments", async () => {
+  const { paths, db, project } = await dbFixture();
+  await writeFile(join(project.path, "scenario.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=", "base64"));
+  startSession(db, project.alias, { goal: "visual review" });
+  const task = addTask(db, project.alias, { title: "dashboard screen state", qualityGate: "visual" });
+  const evidence = addEvidence(db, project.alias, {
+    type: "generated_image",
+    targetType: "task",
+    targetRef: task.alias,
+    status: "candidate",
+    summary: "expected dashboard state",
+    payload: { kind: "visual_scenario_confirm", path: "scenario.png", prompt: "Show dashboard expected state." },
+  });
+  db.close();
+
+  const before = await getJson(paths, `/api/projects/${project.alias}/dashboard`);
+  const candidate = before.data.outputs.find((output: any) => output.id === evidence.alias);
+  expect(candidate.status).toBe("candidate");
+  expect(candidate.needsApproval).toBe(true);
+  expect(candidate.previewUrl).toContain("/artifacts?path=scenario.png");
+
+  const artifact = await handleDashboardRequest(new Request(`http://127.0.0.1:17373${candidate.previewUrl}`), paths);
+  expect(artifact?.headers.get("content-type")).toBe("image/png");
+
+  await postJson(paths, `/api/projects/${project.alias}/evidence/${evidence.alias}/accept`, { comment: "approved direction" });
+  const after = await getJson(paths, `/api/projects/${project.alias}/dashboard`);
+  const accepted = after.data.outputs.find((output: any) => output.id === evidence.alias);
+  expect(accepted.status).toBe("accepted");
+  expect(accepted.reviewComment).toBe("approved direction");
 });
 
 test("codex project migration registers existing paths from metadata", async () => {
