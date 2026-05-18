@@ -12,6 +12,7 @@
         <strong>Ardex</strong>
         <span>Live Session</span>
       </div>
+      <div id="sessionStrip" class="session-strip" aria-label="Session status"></div>
       <div class="project-switcher">
         <button id="projectButton" class="project-button" type="button" aria-haspopup="dialog">Select project</button>
         <span id="connection" class="connection">offline</span>
@@ -25,7 +26,7 @@
     </div>
     <main>
       <div id="errorBanner" class="error-banner" hidden></div>
-      <section class="summary-grid" aria-label="Session summary">
+      <section class="summary-grid" aria-label="Project review">
         <article class="summary-card" id="goalCard"></article>
         <article class="summary-card" id="statusCard"></article>
         <article class="summary-card" id="taskCard"></article>
@@ -34,7 +35,7 @@
       <section class="work-grid">
         <section class="panel task-panel">
           <div class="panel-head">
-            <h2>Tasks</h2>
+            <h2>Roadmap</h2>
             <div class="panel-actions">
               <span id="taskCount" class="muted"></span>
               <button id="openTaskModal" type="button">Add</button>
@@ -45,28 +46,28 @@
         <aside class="side-stack">
           <section class="panel">
             <div class="panel-head">
-              <h2>Asks</h2>
-              <span id="askCount" class="muted"></span>
-            </div>
-            <div id="asks"></div>
-          </section>
-          <section class="panel">
-            <div class="panel-head">
-              <h2>Outputs</h2>
+              <h2>Visible Outputs</h2>
               <span id="outputCount" class="muted"></span>
             </div>
             <div id="outputs"></div>
           </section>
           <section class="panel">
             <div class="panel-head">
-              <h2>Evidence</h2>
+              <h2>User Asks</h2>
+              <span id="askCount" class="muted"></span>
+            </div>
+            <div id="asks"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Verification Log</h2>
               <span id="evidenceCount" class="muted"></span>
             </div>
             <div id="evidence"></div>
           </section>
           <section class="panel">
             <div class="panel-head">
-              <h2>Scale</h2>
+              <h2>Scale & Risk</h2>
               <span id="scaleCount" class="muted"></span>
             </div>
             <div id="scale"></div>

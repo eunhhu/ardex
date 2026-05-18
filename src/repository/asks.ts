@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { notFound } from "../errors.ts";
 import { createId, nextAlias } from "../ids.ts";
 import { requireProject } from "./projects.ts";
-import { findCurrentSessionId } from "./sessions.ts";
+import { findCurrentSessionId, syncSessionWorkflow } from "./sessions.ts";
 import { type Ask } from "./types.ts";
 import { type AskRow, askFromRow } from "./rows.ts";
 
@@ -75,6 +75,7 @@ export function answerAsk(db: Database, projectRef: string, askRef: string, answ
   const now = new Date().toISOString();
   db.query("UPDATE asks SET answer = ?, answer_source = 'user', status = 'answered', answered_at = ? WHERE id = ?").run(answer, now, ask.id);
   clearBlockedSessionIfNoOpenAsks(db, project.id, now);
+  syncSessionWorkflow(db, project.alias, "statement");
   return requireAsk(db, ask.id);
 }
 

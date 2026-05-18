@@ -28,6 +28,12 @@ export type Session = {
   runtimeSeconds: number;
 };
 
+export type AgentActivity = {
+  state: "running" | "idle";
+  lastSeenAt: string;
+  staleSeconds: number;
+};
+
 export type Task = {
   id: string;
   alias: string;
@@ -152,6 +158,8 @@ export type Statement = {
     mode: string;
     goal: string | null;
     runtimeSeconds: number;
+    lastSeenAt: string;
+    agent: AgentActivity;
   } | null;
   currentTask: {
     id: string;
@@ -168,6 +176,33 @@ export type Statement = {
     maxWeight: number | null;
     blockingFindings: number;
     nextSplitRequired: boolean;
+  };
+  visualScenario: {
+    required: boolean;
+    approved: boolean;
+    taskId: string;
+    promptEvidenceId: string | null;
+    imageEvidenceId: string | null;
+    pendingEvidenceIds: string[];
+    rejectedEvidenceIds: string[];
+    prompt: string | null;
+    nextAction: string | null;
+    detail: string;
+  } | null;
+  subagents: {
+    required: boolean;
+    reason: string | null;
+    instruction: string | null;
+    pending: Array<{
+      id: string;
+      alias: string;
+      title: string;
+      owner: string;
+      role: string;
+      status: string;
+      priority: number;
+      estimatedWeight: number | null;
+    }>;
   };
   blockers: string[];
   nextExpectedAction: string | null;

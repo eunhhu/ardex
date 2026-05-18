@@ -15,6 +15,7 @@ import {
   taskCommand,
 } from "./cli-core-commands.ts";
 import { askCommand, evidenceCommand, scaleCommand } from "./cli-workflow-commands.ts";
+import { autoMigrateArdex } from "./init.ts";
 
 export async function main(rawArgs: string[]): Promise<void> {
   const parsed = parseArgs(rawArgs);
@@ -33,6 +34,7 @@ async function ensureDaemonForCommand(parsed: ParsedArgs): Promise<void> {
   if (!commandNeedsDaemon(parsed)) {
     return;
   }
+  await autoMigrateArdex();
   if (parsed.noStart) {
     const health = await checkDaemon();
     if (health === null) {

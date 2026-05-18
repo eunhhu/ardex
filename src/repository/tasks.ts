@@ -2,7 +2,9 @@ import { Database } from "bun:sqlite";
 import { notFound, transitionRejected, usageError } from "../errors.ts";
 import { createId, nextAlias } from "../ids.ts";
 import { requireProject } from "./projects.ts";
-import { currentSession, findCurrentSessionId } from "./sessions.ts";
+import { currentSession, findCurrentSessionId, syncSessionWorkflow } from "./sessions.ts";
+import { assertImplementationScaleGate } from "./scale.ts";
+import { assertVisualScenarioReadyForClaim, visualScenarioChecklistItem } from "./visual-scenarios.ts";
 import { type Task, type TaskEvent } from "./types.ts";
 import { type TaskEventRow, type TaskRow, taskEventFromRow, taskFromRow } from "./rows.ts";
 
@@ -130,6 +132,9 @@ export function setTaskField(db: Database, projectRef: string, taskRef: string, 
   ).run(spec.parse(value), now, completedAt, task.id);
 
   const updated = requireTask(db, task.id);
+  if (spec.column === "progress" && updated.sessionId !== null) {
+    syncSessionWorkflow(db, project.alias, "task_progress");
+  }
   recordTaskEvent(db, {
     projectId: project.id,
     sessionId: updated.sessionId,
@@ -154,6 +159,8 @@ export function claimTask(db: Database, projectRef: string, taskRef: string): Ta
   }
 
   const session = currentSession(db, project.alias);
+  assertImplementationScaleGate(db, project.id);
+  assertVisualScenarioReadyForClaim(db, project.id, task);
   const now = new Date().toISOString();
   db.query(
     `
@@ -170,6 +177,7 @@ export function claimTask(db: Database, projectRef: string, taskRef: string): Ta
   ).run(session.id, now, now, now, task.id);
   db.query("UPDATE sessions SET current_task_id = ?, last_seen_at = ? WHERE id = ?").run(task.id, now, session.id);
   const updated = requireTask(db, task.id);
+  syncSessionWorkflow(db, project.alias, "task_claimed");
   recordTaskEvent(db, {
     projectId: project.id,
     sessionId: session.id,
@@ -213,6 +221,7 @@ export function completeTask(db: Database, projectRef: string, taskRef: string):
   const activeSeconds = runtimeSecondsAt(task, now);
   db.query("UPDATE tasks SET status = 'done', active_seconds = ?, completed_at = ?, updated_at = ? WHERE id = ?").run(activeSeconds, now, now, task.id);
   db.query("UPDATE sessions SET current_task_id = NULL, last_seen_at = ? WHERE current_task_id = ?").run(now, task.id);
+  syncSessionWorkflow(db, project.alias, "task_completed");
   const completed = requireTask(db, task.id);
   recordTaskEvent(db, {
     projectId: project.id,
@@ -252,6 +261,7 @@ export function pauseTask(db: Database, projectRef: string, taskRef: string, rea
     `,
   ).run(activeSeconds, now, reason ?? null, now, task.id);
   db.query("UPDATE sessions SET current_task_id = NULL, last_seen_at = ? WHERE current_task_id = ?").run(now, task.id);
+  syncSessionWorkflow(db, project.alias, "task_paused");
   const paused = requireTask(db, task.id);
   recordTaskEvent(db, {
     projectId: project.id,
@@ -297,6 +307,7 @@ export function resumeTask(db: Database, projectRef: string, taskRef: string): T
     `resume:${task.alias}`,
     session.id,
   );
+  syncSessionWorkflow(db, project.alias, "task_resumed");
   const resumed = requireTask(db, task.id);
   recordTaskEvent(db, {
     projectId: project.id,
@@ -338,6 +349,7 @@ export function deleteTask(db: Database, projectRef: string, taskRef: string): T
     db.query("UPDATE sessions SET current_task_id = NULL, last_seen_at = ? WHERE current_task_id = ?").run(now, task.id);
     db.query("DELETE FROM tasks WHERE id = ?").run(task.id);
     db.query("UPDATE tasks SET priority = priority - 1, updated_at = ? WHERE project_id = ? AND priority > ?").run(now, project.id, task.priority);
+    syncSessionWorkflow(db, project.alias, "task_deleted");
     db.exec("COMMIT;");
     return event;
   } catch (error) {
@@ -383,6 +395,7 @@ export function buildProductionChecklist(db: Database, projectRef: string, taskR
       detail: `gate=${task.qualityGate}`,
     },
     scaleChecklistItem(db, project.id),
+    visualScenarioChecklistItem(db, project.id, task),
     {
       id: "open_asks",
       label: "No open project asks",

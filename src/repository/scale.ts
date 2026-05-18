@@ -3,7 +3,7 @@ import { notFound, scaleBlocked, scaleSplitRequired, usageError } from "../error
 import { createId, nextAlias } from "../ids.ts";
 import type { ScaleScanResult } from "../scale.ts";
 import { requireProject } from "./projects.ts";
-import { findCurrentSessionId } from "./sessions.ts";
+import { findCurrentSessionId, syncSessionWorkflow } from "./sessions.ts";
 import {
   type FileScaleFinding,
   type ScaleEstimate,
@@ -82,6 +82,7 @@ export function storeScaleReport(db: Database, projectRef: string, scan: ScaleSc
     throw error;
   }
 
+  syncSessionWorkflow(db, project.alias, "scale_checked");
   return latestScaleReport(db, project.alias);
 }
 

@@ -6,6 +6,7 @@ import { handleDashboardRequest } from "../src/dashboard.ts";
 import { initializeStorage } from "../src/daemon.ts";
 import { openDatabase } from "../src/db.ts";
 import { initializeArdex } from "../src/init.ts";
+import { checkCommand, statementCommand } from "../src/cli-core-commands.ts";
 import { getArdexPaths } from "../src/paths.ts";
 import { migrateCodexProjects } from "../src/codex-migration.ts";
 import {
@@ -13,9 +14,12 @@ import {
   addProject,
   addTask,
   archiveProject,
+  buildStatement,
   buildProductionChecklist,
   completeTask,
+  claimTask,
   deleteTask,
+  ensureVisualScenarioPrompt,
   listEvidence,
   listTaskEvents,
   listTasks,
@@ -23,6 +27,7 @@ import {
   pauseTask,
   resumeTask,
   setTaskOwner,
+  setEvidenceStatus,
   splitTaskFromScale,
   startSession,
   setTaskField,
@@ -40,6 +45,7 @@ afterEach(async () => {
   }
   delete process.env.ARDEX_SKILL_ROOT;
   delete process.env.ARDEX_CODEX_HOME;
+  delete process.env.ARDEX_HOME;
 });
 
 test("init installs Codex skill and hooks without touching real home when overridden", async () => {
@@ -51,7 +57,13 @@ test("init installs Codex skill and hooks without touching real home when overri
   const result = await initializeArdex(paths, { installCodex: true });
 
   expect(result.codex.skillPath).toEndWith("skills/ardex/SKILL.md");
-  expect(await readFile(result.codex.skillPath, "utf8")).toContain("name: ardex");
+  const skill = await readFile(result.codex.skillPath, "utf8");
+  expect(skill).toContain("name: ardex");
+  expect(skill).toContain("statement.subagents.required");
+  expect(skill).toContain("explicit Ardex delegation request");
+  const promptHookPath = result.codex.hookScriptPaths.find((path) => path.endsWith("user-prompt-context.mjs"));
+  expect(promptHookPath).toBeDefined();
+  expect(await readFile(promptHookPath ?? "", "utf8")).toContain("Subagent rule");
   const hooks = JSON.parse(await readFile(result.codex.hooksConfigPath, "utf8")) as { hooks: Record<string, unknown[]> };
   expect(hooks.hooks.UserPromptSubmit?.length).toBe(1);
   expect(hooks.hooks.Stop?.length).toBe(1);
@@ -107,6 +119,39 @@ test("init is idempotent and replaces stale Ardex hook entries", async () => {
   expect(hooks.hooks.PostToolUse).toBeUndefined();
 });
 
+test("check auto-migrates stale installed Codex integration", async () => {
+  const root = await tempRoot();
+  process.env.ARDEX_HOME = join(root, "ardex");
+  process.env.ARDEX_SKILL_ROOT = join(root, "skills");
+  process.env.ARDEX_CODEX_HOME = join(root, "codex");
+  await mkdir(join(process.env.ARDEX_SKILL_ROOT, "ardex"), { recursive: true });
+  await mkdir(process.env.ARDEX_CODEX_HOME, { recursive: true });
+  await writeFile(join(process.env.ARDEX_SKILL_ROOT, "ardex", "SKILL.md"), "old skill\n", "utf8");
+  const hooksPath = join(process.env.ARDEX_CODEX_HOME, "hooks.json");
+  await writeFile(
+    hooksPath,
+    `${JSON.stringify({
+      hooks: {
+        PostToolUse: [{ hooks: [{ type: "command", command: "node /old/.ardex/hooks/post-tool-use-evidence.mjs" }] }],
+      },
+    })}\n`,
+    "utf8",
+  );
+
+  try {
+    await checkCommand();
+  } catch {
+    // The daemon is intentionally not running; migration must happen before that failure.
+  }
+
+  const skill = await readFile(join(process.env.ARDEX_SKILL_ROOT, "ardex", "SKILL.md"), "utf8");
+  const hooks = JSON.parse(await readFile(hooksPath, "utf8")) as { hooks: Record<string, unknown[]> };
+  expect(skill).toContain("statement.subagents.required");
+  expect(hooks.hooks.PostToolUse).toBeUndefined();
+  expect(hooks.hooks.UserPromptSubmit?.length).toBe(1);
+  expect(hooks.hooks.Stop?.length).toBe(1);
+});
+
 test("task priority shifts and quality gate is advisory", async () => {
   const { db, project } = await dbFixture();
   try {
@@ -152,6 +197,85 @@ test("task runtime pause resume owner and delete are tracked as events", async (
   }
 });
 
+test("statement exposes subagent delegation plan", async () => {
+  const { db, project } = await dbFixture();
+  try {
+    const task = addTask(db, project.alias, { title: "delegated slice", qualityGate: "review" });
+    setTaskOwner(db, project.alias, task.alias, "subagent:worker-1");
+    const statement = buildStatement(db, project.alias);
+    expect(statement.subagents.required).toBe(true);
+    expect(statement.subagents.pending[0]?.id).toBe(task.alias);
+    expect(statement.subagents.pending[0]?.role).toBe("worker-1");
+    expect(statement.subagents.instruction).toContain("Spawn separate Codex subagents");
+  } finally {
+    db.close();
+  }
+});
+
+test("statement command syncs stale planning session into active workflow", async () => {
+  const { paths, db, project } = await dbFixture();
+  process.env.ARDEX_HOME = paths.home;
+  process.env.ARDEX_SKILL_ROOT = join(paths.home, "skills");
+  process.env.ARDEX_CODEX_HOME = join(paths.home, "codex");
+  let taskAlias = "";
+  try {
+    startSession(db, project.alias, { goal: "workflow" });
+    const task = addTask(db, project.alias, { title: "workflow task", qualityGate: "none" });
+    taskAlias = task.alias;
+    const scan = await scanScale({ projectPath: project.path, paths: [] });
+    storeScaleReport(db, project.alias, scan);
+    claimTask(db, project.alias, task.alias);
+    setSessionField(db, project.alias, "status", "planning");
+  } finally {
+    db.close();
+  }
+
+  const result = await statementCommand({
+    args: ["statement"],
+    commandName: "statement",
+    json: true,
+    noStart: false,
+    projectId: project.alias,
+  });
+  const statement = (result.data as { statement: ReturnType<typeof buildStatement> }).statement;
+
+  expect(statement.session?.status).toBe("implementing");
+  expect(statement.session?.agent.state).toBe("running");
+  expect(statement.currentTask?.id).toBe(taskAlias);
+  expect(statement.nextExpectedAction).toBe(`work:${taskAlias}`);
+});
+
+test("statement command preserves reviewing after final task completion", async () => {
+  const { paths, db, project } = await dbFixture();
+  process.env.ARDEX_HOME = paths.home;
+  process.env.ARDEX_SKILL_ROOT = join(paths.home, "skills");
+  process.env.ARDEX_CODEX_HOME = join(paths.home, "codex");
+  try {
+    startSession(db, project.alias, { goal: "reviewing" });
+    const task = addTask(db, project.alias, { title: "final task", qualityGate: "none" });
+    const scan = await scanScale({ projectPath: project.path, paths: [] });
+    storeScaleReport(db, project.alias, scan);
+    claimTask(db, project.alias, task.alias);
+    setTaskField(db, project.alias, task.alias, "progress", "1");
+    completeTask(db, project.alias, task.alias);
+    setSessionField(db, project.alias, "status", "specifying");
+  } finally {
+    db.close();
+  }
+
+  const result = await statementCommand({
+    args: ["statement"],
+    commandName: "statement",
+    json: true,
+    noStart: false,
+    projectId: project.alias,
+  });
+  const statement = (result.data as { statement: ReturnType<typeof buildStatement> }).statement;
+
+  expect(statement.session?.status).toBe("reviewing");
+  expect(statement.nextExpectedAction).toBe("review_session");
+});
+
 test("task delete compacts priorities and leaves delete event", async () => {
   const { db, project } = await dbFixture();
   try {
@@ -183,6 +307,40 @@ test("evidence redacts secrets before storage", async () => {
     }
     expect(evidence.summary).toContain("[REDACTED]");
     expect(String(evidence.payload.output)).toContain("[REDACTED]");
+  } finally {
+    db.close();
+  }
+});
+
+test("visual scenario gate blocks visual task claim until approved imagegen output exists", async () => {
+  const { db, project } = await dbFixture();
+  try {
+    startSession(db, project.alias, { goal: "visual gate" });
+    storeScaleReport(db, project.alias, await scanScale({ projectPath: project.path, paths: [] }));
+    const task = addTask(db, project.alias, { title: "dashboard layout polish", qualityGate: "visual" });
+
+    expect(() => claimTask(db, project.alias, task.alias)).toThrow("Visual scenario approval is required");
+
+    const prompt = ensureVisualScenarioPrompt(db, project, task);
+    expect(prompt.type).toBe("prototype");
+    expect(prompt.status).toBe("candidate");
+    expect(prompt.payload.kind).toBe("visual_scenario_prompt");
+    expect(() => claimTask(db, project.alias, task.alias)).toThrow("Visual scenario approval is required");
+
+    const candidate = addEvidence(db, project.alias, {
+      type: "generated_image",
+      targetType: "task",
+      targetRef: task.alias,
+      status: "candidate",
+      summary: "visual scenario candidate",
+      payload: { kind: "visual_scenario_confirm", path: "scenario.png", prompt: prompt.payload.prompt },
+    });
+    expect(() => claimTask(db, project.alias, task.alias)).toThrow("Visual scenario approval is required");
+
+    setEvidenceStatus(db, project.alias, candidate.alias, "accepted", { comment: "matches expected flow" });
+    expect(claimTask(db, project.alias, task.alias).status).toBe("active");
+    const checklist = buildProductionChecklist(db, project.alias, task.alias);
+    expect(checklist.items.find((item) => item.id === "visual_scenario_confirm")?.passed).toBe(true);
   } finally {
     db.close();
   }
@@ -268,14 +426,14 @@ test("dashboard session and task mutation endpoints update snapshot", async () =
   db.close();
 
   await postJson(paths, `/api/projects/${project.alias}/session/start`, { goal: "dashboard flow" });
-  const taskEnvelope = await postJson(paths, `/api/projects/${project.alias}/tasks`, { title: "dashboard task", qualityGate: "none" });
+  const taskEnvelope = await postJson(paths, `/api/projects/${project.alias}/tasks`, { title: "storage task", qualityGate: "none" });
   const taskId = taskEnvelope.data.task.alias as string;
   await postJson(paths, `/api/projects/${project.alias}/tasks/${taskId}/priority`, { priority: 1 });
   await postJson(paths, `/api/projects/${project.alias}/tasks/${taskId}/progress`, { progress: 1 });
   await postJson(paths, `/api/projects/${project.alias}/tasks/${taskId}/done`, {});
   const dashboard = await getJson(paths, `/api/projects/${project.alias}/dashboard`);
 
-  expect(dashboard.data.tasks[0].title).toBe("dashboard task");
+  expect(dashboard.data.tasks[0].title).toBe("storage task");
   expect(dashboard.data.tasks[0].status).toBe("done");
 });
 
@@ -310,6 +468,37 @@ test("dashboard pause resume owner and generated image outputs update snapshot",
   expect(dashboard.data.outputs.some((output: any) => output.type === "generated_image" && output.renderableImage === true)).toBe(true);
 });
 
+test("dashboard shows visual scenario candidates and records review comments", async () => {
+  const { paths, db, project } = await dbFixture();
+  await writeFile(join(project.path, "scenario.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=", "base64"));
+  startSession(db, project.alias, { goal: "visual review" });
+  const task = addTask(db, project.alias, { title: "dashboard screen state", qualityGate: "visual" });
+  const evidence = addEvidence(db, project.alias, {
+    type: "generated_image",
+    targetType: "task",
+    targetRef: task.alias,
+    status: "candidate",
+    summary: "expected dashboard state",
+    payload: { kind: "visual_scenario_confirm", path: "scenario.png", prompt: "Show dashboard expected state." },
+  });
+  db.close();
+
+  const before = await getJson(paths, `/api/projects/${project.alias}/dashboard`);
+  const candidate = before.data.outputs.find((output: any) => output.id === evidence.alias);
+  expect(candidate.status).toBe("candidate");
+  expect(candidate.needsApproval).toBe(true);
+  expect(candidate.previewUrl).toContain("/artifacts?path=scenario.png");
+
+  const artifact = await handleDashboardRequest(new Request(`http://127.0.0.1:17373${candidate.previewUrl}`), paths);
+  expect(artifact?.headers.get("content-type")).toBe("image/png");
+
+  await postJson(paths, `/api/projects/${project.alias}/evidence/${evidence.alias}/accept`, { comment: "approved direction" });
+  const after = await getJson(paths, `/api/projects/${project.alias}/dashboard`);
+  const accepted = after.data.outputs.find((output: any) => output.id === evidence.alias);
+  expect(accepted.status).toBe("accepted");
+  expect(accepted.reviewComment).toBe("approved direction");
+});
+
 test("codex project migration registers existing paths from metadata", async () => {
   const { db, project } = await dbFixture();
   try {
@@ -340,8 +529,10 @@ test("scale split creates weighted subagent-owned child tasks", async () => {
     const scan = await scanScale({ projectPath: project.path, paths: ["src"] });
     storeScaleReport(db, project.alias, scan);
     const split = splitTaskFromScale(db, project.alias, task.alias);
+    const owners = split.tasks.map((item) => item.owner);
     expect(split.tasks.length).toBeGreaterThanOrEqual(2);
-    expect(split.tasks.some((item) => item.owner === "subagent:worker")).toBe(true);
+    expect(owners.every((owner) => owner.startsWith("subagent:worker-"))).toBe(true);
+    expect(new Set(owners).size).toBe(owners.length);
     expect(listTasks(db, project.alias).find((item) => item.alias === task.alias)?.status).toBe("blocked");
   } finally {
     db.close();

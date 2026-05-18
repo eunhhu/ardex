@@ -3,7 +3,7 @@
 Daemon binds to `127.0.0.1` by default. Responses use one envelope:
 
 ```json
-{ "ok": true, "data": {}, "meta": { "surface": "dashboard", "version": "0.1.0" } }
+{ "ok": true, "data": {}, "meta": { "surface": "dashboard", "version": "0.1.3" } }
 ```
 
 Errors use:
@@ -12,7 +12,7 @@ Errors use:
 {
   "ok": false,
   "error": { "code": "VALIDATION_ERROR", "message": "Field title is required.", "details": {} },
-  "meta": { "surface": "dashboard", "version": "0.1.0" }
+  "meta": { "surface": "dashboard", "version": "0.1.3" }
 }
 ```
 
@@ -31,6 +31,7 @@ HTTP status mapping:
 - `GET /api/projects`
   Returns non-archived projects by default.
 - `GET /api/projects/:project/dashboard`
+- `GET /api/projects/:project/artifacts?path=:projectRelativeOrAbsoluteImagePath`
 - `GET /events?project=:project`
 - `POST /api/projects/:project/session/start`
   Body: `{ "goal": "string", "mode": "sdd_vdd", "model": "string" }`
@@ -56,7 +57,9 @@ HTTP status mapping:
 - `POST /api/projects/:project/asks/:ask/answer`
   Body: `{ "answer": "string" }`
 - `POST /api/projects/:project/evidence/:evidence/accept`
+  Body: `{ "comment": "optional review comment" }`
 - `POST /api/projects/:project/evidence/:evidence/reject`
+  Body: `{ "comment": "optional rejection reason" }`
 - `POST /api/projects/:project/scale/check`
   Body: `{ "paths": ["src", "web"], "goal": "optional string" }`
 - `POST /api/projects/:project/scale/split`
@@ -64,9 +67,11 @@ HTTP status mapping:
 - `POST /api/projects/:project/scale/findings/:finding/waive`
   Body: `{ "reason": "at least 20 characters" }`
 
-Dashboard snapshots include task runtime fields (`startedAt`, `pausedAt`, `resumedAt`, `activeSeconds`, `runtimeSeconds`, `pauseReason`), production checklist state, and output artifacts extracted from accepted `screenshot`, `generated_image`, `prototype`, `url`, and `browser_diff` evidence.
+Dashboard snapshots include task runtime fields (`startedAt`, `pausedAt`, `resumedAt`, `activeSeconds`, `runtimeSeconds`, `pauseReason`), production checklist state, `statement.subagents` delegation guidance, `statement.visualScenario` approval state, `statement.session.agent` activity (`running|idle`, `lastSeenAt`, `staleSeconds`), and output artifacts extracted from accepted `screenshot`, `generated_image`, `prototype`, `url`, and `browser_diff` evidence. Candidate or rejected `generated_image` evidence with `payload.kind="visual_scenario_confirm"` is also included in Visible Outputs for VDD approval.
 
-The dashboard UI exposes user-facing controls for project switching, session start, detailed task creation, task priority reorder, ask answer, scale operations, and optional artifact accept/reject. Agent-owned task status, progress, pause/resume, done, delete, and owner mutation remain CLI/API surfaces and are not presented as casual dashboard buttons.
+The dashboard UI exposes user-facing controls for project switching, session start, detailed task creation, task priority reorder, ask answer, scale operations, and visual scenario approve/reject with comments. Agent-owned task status, progress, pause/resume, done, delete, and owner mutation remain CLI/API surfaces and are not presented as casual dashboard buttons. A sticky session strip remains visible while scrolling and shows agent activity, session status, goal, current task, and runtime.
+
+The first viewport prioritizes project review: implementation level, progress, current focus, readiness, visible outputs, open asks, and scale risk. Evidence data remains available through the API and dashboard as a collapsed `Verification Log`; it is treated as agent receipts/debug context, not the main user-facing progress model.
 
 ## Security
 

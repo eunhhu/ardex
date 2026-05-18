@@ -753,7 +753,7 @@ Success envelope:
     "command": "task.done",
     "projectId": "p_001",
     "sessionId": "s_001",
-    "version": "0.1.0"
+    "version": "0.1.3"
   }
 }
 ```
@@ -773,7 +773,7 @@ Error envelope:
   },
   "meta": {
     "command": "task.done",
-    "version": "0.1.0"
+    "version": "0.1.3"
   }
 }
 ```
@@ -791,7 +791,7 @@ ardex check --json
     "daemon": "running",
     "url": "http://127.0.0.1:17373",
     "dbPath": "/Users/me/.ardex/ardex.db",
-    "version": "0.1.0"
+    "version": "0.1.3"
   }
 }
 ```
@@ -1075,20 +1075,20 @@ Event shape:
 MVP screens:
 
 1. Project command switcher: searchable non-archived projects with clean name, path, and id.
-2. Project dashboard: current goal, session status, runtime, active task.
+2. Project dashboard: implementation level, progress, current focus, readiness, visible outputs, and risks.
 3. Feature map: features, importance, estimated weight, toy output status.
 4. Task board: ordered tasks with read-only progress/status/owner and user-editable priority.
-5. Task detail: content, evidence, asks, advisor notes.
+5. Task detail: content, asks, owner, advisor notes, and verification receipts.
 6. Ask inbox: open user questions with attached images/files.
-7. Evidence gallery: screenshots, URLs, command/test summaries.
+7. Verification log: collapsed receipt/debug view for screenshots, URLs, command/test summaries, user decisions, and manual QA notes.
 8. Scale map: feature/task weights, oversized files, split recommendations, agent tier suggestions.
 
 UX requirements:
 
 1. Progress visible in first viewport.
 2. Active task and blocker visible without clicking.
-3. Every `done` task must show why it is done.
-4. Visual work should show screenshot, generated image, prototype, or runnable URL when such artifact is attached.
+3. Every `done` task must show why it is done through compact readiness/checklist status, not by forcing users into raw evidence.
+4. Visual work should show screenshot, generated image, prototype, or runnable URL as visible output when such artifact is attached.
 5. User can add a task through a modal with title, content, priority, importance, owner hint, and quality-gate label.
 6. User can reorder priority from UI.
 7. User can answer asks from UI.
@@ -1102,19 +1102,21 @@ UX requirements:
 Project dashboard first viewport:
 
 1. Header: project name, path, daemon status, live connection status.
-2. Goal strip: current goal, session status, mode, runtime.
-3. Active work: current task, progress, quality gate, owner, next expected action.
-4. Blocker card: open asks, stale waivers, paused work, or scale blocks.
-5. Gate summary: scale, spec, visual, demo, readiness labels.
-6. Latest outputs: screenshot, generated image, URL, prototype, or manual QA note when attached.
+2. Sticky session strip: agent running/idle state, current goal, session status, current task, next action, and runtime. It remains visible while scrolling and does not steal focus during SSE updates.
+3. Project review cards: implementation level, total progress, current focus, and readiness.
+4. Active work: current task, progress, quality gate, owner, next expected action.
+5. Blocker and risk visibility: open asks, stale waivers, paused work, scale blocks, or oversized scope.
+6. Latest visible outputs: screenshot, generated image, URL, prototype, browser result, or manual QA note when attached.
 7. Primary actions: answer ask, add task, reorder priority, run scale check, open demo.
+8. Evidence/receipts are not first-class progress UI. They appear as a collapsed `Verification Log` for audit/debug use.
 
 Empty states:
 
 1. No project: show `ardex project add <path>` and `ardex init`.
 2. No session: show `ardex session start`.
 3. No task: show create task and scale check actions.
-4. No evidence: show required evidence for current gate.
+4. No visible output: show that no demo, screenshot, generated image, or browser result is attached yet.
+5. No verification receipts: keep the collapsed log and explain receipts are for external artifacts, user decisions, and manual QA notes.
 
 Loading states:
 
@@ -1355,8 +1357,8 @@ Custom agents:
 
 1. Optional user agents: `~/.codex/agents/ardex-explorer.toml`, `~/.codex/agents/ardex-worker.toml`.
 2. Optional repo agents: `<repo>/.codex/agents/ardex-explorer.toml`, `<repo>/.codex/agents/ardex-worker.toml`.
-3. Ardex task owners map to Codex agent roles only as labels unless the user explicitly asks Codex to spawn subagents.
-4. `ardex task <id> assign subagent:explorer` records intended ownership and emits prompt guidance; it does not spawn Codex agents by itself.
+3. Ardex task owners are routing instructions, not passive labels. When a statement contains pending `subagent:<role>` tasks, prompt injection must tell Codex to spawn/use separated subagent contexts when available.
+4. `ardex task <id> assign subagent:explorer` records intended ownership and emits prompt guidance. Main Codex coordinates, integrates, and verifies instead of silently implementing subagent-owned work in the main context.
 
 Deferred JSONL adapter:
 
@@ -1427,6 +1429,9 @@ Rules:
 4. Subagent result is not done until parent attaches verification evidence.
 5. Agent assignment follows scale estimate instead of giving equal agents to unequal work.
 6. If sibling task weights differ by more than `3x`, split or merge before spawning agents.
+7. `statement.subagents.required` is true when open tasks have `subagent:<role>` owners.
+8. UserPromptSubmit hook context must include pending subagent task ids, roles, status, and instruction to spawn/use one bounded subagent per task when available.
+9. If subagent tools are unavailable, Codex must report that limitation instead of silently doing subagent-owned implementation in the main context.
 
 Task owner examples:
 
@@ -1664,7 +1669,7 @@ Evidence security:
 
 UI e2e:
 
-1. First viewport shows goal, status, active task, blocker, latest evidence, and gate status.
+1. First viewport shows implementation level, progress, current focus, readiness, blocker, and latest visible outputs.
 2. CLI task progress update appears through SSE without reload.
 3. Answering an ask in UI clears blocked state when no other blockers remain.
 
@@ -1692,7 +1697,29 @@ Hooks must degrade gracefully:
 
 Hook installation must be idempotent. `ardex init` removes stale Ardex-managed hook entries for `UserPromptSubmit`, `Stop`, and legacy `PostToolUse` before installing the current entries, and it preserves non-Ardex hook entries.
 
-`UserPromptSubmit` injects the current Ardex statement into Codex context every turn. This is the fallback for cases where a Codex agent does not spontaneously follow the Ardex skill instructions. The injected context includes project, session, current task, owner, next expected action, blockers, and mandatory workflow rules.
+`UserPromptSubmit` injects the current Ardex statement into Codex context every turn. This is the fallback for cases where a Codex agent does not spontaneously follow the Ardex skill instructions. The injected context includes project, session, agent activity, current task, owner, next expected action, blockers, and mandatory workflow rules.
+
+`ardex statement --json` is an enforcing read, not a passive read. Before returning the statement it synchronizes the current session workflow from authoritative state:
+
+1. Open asks force `blocked` and `next_expected_action = answer_ask`.
+2. Active task forces `implementing`.
+3. Active task with `progress >= 1` forces `verifying`.
+4. Paused task forces `blocked` and `next_expected_action = wait_for_resume:<task>`.
+5. Clear scale report with open tasks forces `specifying` and `next_expected_action = claim_task`.
+6. Split-required scale report forces `scaling` and `next_expected_action = split_or_waive_scale`.
+7. Completed final task moves the session to `reviewing`.
+8. Every workflow mutation updates `last_seen_at`; dashboard polling must not update `last_seen_at`.
+
+Agent running state is derived from `sessions.last_seen_at`, not from dashboard polling. A session is `running` when it is in a non-terminal, non-blocked status and was seen within the configured freshness window; otherwise it is `idle`.
+
+Existing installs must migrate automatically after package upgrades:
+
+1. `ardex check`, `ardex start`, `ardex status`, and stateful CLI commands run install migration before their normal operation.
+2. Migration runs SQLite migrations, refreshes managed `$HOME/.agents/skills/ardex/SKILL.md`, refreshes managed hook scripts, removes stale Ardex-owned hook entries, and writes current hook entries.
+3. Managed Ardex files may be overwritten when stale.
+4. Non-Ardex hooks and config entries must be preserved.
+5. Repeated migration must be idempotent and avoid rewriting files when generated content is already current.
+6. If a daemon is already running with an older package version, `ardex start` and stateful CLI auto-start paths stop it and start the current daemon version.
 
 ### Codex Project/Thread Migration
 
@@ -1778,7 +1805,7 @@ Scale reports must drive planning, not only blocking.
 1. Weight `>13`, `recommendedAgent=split`, or blocking source files create split recommendations.
 2. `scale split --task <id>` creates child tasks with balanced estimated weights.
 3. Generated child tasks inherit quality gate, acceptance context, and priority order.
-4. Child owners are assigned by weight: `low` stays `main`, `standard` can use `subagent:worker`, `strong` uses `subagent:worker`, `split` remains blocked until split again.
+4. Child owners are assigned to unique roles such as `subagent:worker-1`, `subagent:worker-2`, and remain bounded to their generated slice. Main context owns integration/review.
 5. The dashboard shows roadmap imbalance and owner distribution before implementation starts.
 
 ### Production Checklist

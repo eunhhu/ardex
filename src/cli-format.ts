@@ -1,16 +1,17 @@
 import { VERSION } from "./output.ts";
-import type {
-  Ask,
-  Evidence,
-  FileScaleFinding,
-  ProductionChecklist,
-  Project,
-  ScaleEstimate,
-  ScaleReport,
-  Session,
-  Statement,
-  Task,
-  TaskEvent,
+import {
+  sessionAgentActivity,
+  type Ask,
+  type Evidence,
+  type FileScaleFinding,
+  type ProductionChecklist,
+  type Project,
+  type ScaleEstimate,
+  type ScaleReport,
+  type Session,
+  type Statement,
+  type Task,
+  type TaskEvent,
 } from "./repository.ts";
 
 export function projectSummary(project: Project): Record<string, unknown> {
@@ -33,6 +34,8 @@ export function sessionSummary(session: Session): Record<string, unknown> {
     mode: session.mode,
     currentTaskId: session.currentTaskId,
     runtimeSeconds: session.runtimeSeconds,
+    lastSeenAt: session.lastSeenAt,
+    agent: sessionAgentActivity(session),
     nextExpectedAction: session.nextExpectedAction,
   };
 }
@@ -165,11 +168,16 @@ export function formatObject(value: Record<string, unknown>): string {
 }
 
 export function formatStatement(statement: Statement): string {
+  const subagentLine = statement.subagents.required
+    ? `subagents: required ${statement.subagents.pending.map((task) => `${task.id}:${task.owner}`).join(", ")}`
+    : `subagents: none${statement.subagents.reason ? ` (${statement.subagents.reason})` : ""}`;
   return [
     `project: ${statement.project.id} ${statement.project.path}`,
-    `session: ${statement.session?.id ?? "none"} ${statement.session?.status ?? ""}`,
+    `session: ${statement.session?.id ?? "none"} ${statement.session?.status ?? ""} agent:${statement.session?.agent.state ?? "idle"}`,
     `goal: ${statement.session?.goal ?? ""}`,
     `currentTask: ${statement.currentTask?.id ?? "none"} ${statement.currentTask?.title ?? ""}`,
+    `visualScenario: ${statement.visualScenario?.required ? (statement.visualScenario.approved ? "approved" : statement.visualScenario.detail) : "none"}`,
+    subagentLine,
     `next: ${statement.nextExpectedAction ?? ""}`,
     `blockers: ${statement.blockers.length}`,
   ].join("\n");
@@ -187,7 +195,7 @@ export function usageText(): string {
     "  status               Show daemon status",
     "  project ls|add|show|current|rename|archive|restore|migrate-codex",
     "  session ls|current|start|set|done",
-    "  task ls|add|check|claim|pause|resume|assign|delete|done|events|checklist|<id> set",
+    "  task ls|add|check|claim|pause|resume|assign|delete|done|events|checklist|<id> scenario|<id> set",
     "  evidence add|ls|<id> accept|reject|check",
     "  ask <question>|ls|<id> answer",
     "  scale check|report|waive",

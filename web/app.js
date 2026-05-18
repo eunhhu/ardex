@@ -133,6 +133,19 @@ function bindEvents() {
       return;
     }
 
+    if (form.dataset.outputReviewForm !== undefined) {
+      const evidenceId = form.dataset.evidenceId;
+      const submitter = event.submitter instanceof HTMLButtonElement ? event.submitter : null;
+      const action = submitter?.value || "";
+      if (evidenceId && (action === "accept" || action === "reject")) {
+        await post("/api/projects/" + enc(state.projectId) + "/evidence/" + enc(evidenceId) + "/" + enc(action), {
+          comment: formValue(form, "comment"),
+        });
+        await safely(refresh);
+      }
+      return;
+    }
+
     if (form.dataset.answerForm !== undefined) {
       const askId = form.dataset.askId;
       const answer = formValue(form, "answer");

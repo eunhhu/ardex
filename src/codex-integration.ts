@@ -35,10 +35,10 @@ export async function installCodexIntegration(paths: ArdexPaths): Promise<CodexI
   await mkdir(dirname(skillPath), { recursive: true });
   await mkdir(hooksDir, { recursive: true });
   await mkdir(dirname(hooksConfigPath), { recursive: true });
-  await writeFile(skillPath, ardexSkillContent(), "utf8");
-  await writeFile(stopScriptPath, stopHookScript(), "utf8");
-  await writeFile(legacyPostToolUseScriptPath, disabledPostToolUseHookScript(), "utf8");
-  await writeFile(userPromptScriptPath, userPromptHookScript(), "utf8");
+  await writeTextIfChanged(skillPath, ardexSkillContent());
+  await writeTextIfChanged(stopScriptPath, stopHookScript());
+  await writeTextIfChanged(legacyPostToolUseScriptPath, disabledPostToolUseHookScript());
+  await writeTextIfChanged(userPromptScriptPath, userPromptHookScript());
   await mergeHooksConfig(hooksConfigPath, [
     {
       event: "UserPromptSubmit",
@@ -90,7 +90,6 @@ async function mergeHooksConfig(
     entries.push(addition.entry);
     config.hooks[addition.event] = entries;
   }
-  await writeBackupIfExisting(path);
   await atomicWriteJson(path, config);
 }
 
@@ -121,9 +120,33 @@ function isManagedArdexHook(entry: HookEntry): boolean {
   });
 }
 
+async function writeTextIfChanged(path: string, value: string): Promise<void> {
+  try {
+    if ((await readFile(path, "utf8")) === value) {
+      return;
+    }
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+      throw error;
+    }
+  }
+  await writeFile(path, value, "utf8");
+}
+
 async function atomicWriteJson(path: string, value: unknown): Promise<void> {
+  const next = `${JSON.stringify(value, null, 2)}\n`;
+  try {
+    if ((await readFile(path, "utf8")) === next) {
+      return;
+    }
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+      throw error;
+    }
+  }
+  await writeBackupIfExisting(path);
   const tmpPath = `${path}.${process.pid}.${crypto.randomUUID()}.tmp`;
-  await writeFile(tmpPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  await writeFile(tmpPath, next, "utf8");
   await rename(tmpPath, path);
 }
 
@@ -163,9 +186,12 @@ Use Ardex CLI as source of truth for project/session/task state. Prefer stable J
 ## Work Loop
 
 - Before implementation, run \`ardex -p <project> scale check --path <target> --json\`.
+- For \`qualityGate=visual\` or UX-impactful tasks, run \`ardex -p <project> task <task> scenario --json\`, use imagegen to create the scenario image, attach it as candidate \`generated_image\` evidence with \`--kind visual_scenario_confirm\`, and wait for dashboard approval before claiming implementation.
 - Claim a task before editing: \`ardex -p <project> task <task> claim --json\`.
 - If a user-paused task exists, do not resume it unless the statement says \`resume:<task_id>\` or the user explicitly asks.
-- Respect task owner. Use \`subagent:<role>\` as delegation hint and keep Ardex updated with \`task <task> assign <owner>\`.
+- Respect task owner. If \`statement.subagents.required\` is true or a task owner starts with \`subagent:\`, treat that as an explicit Ardex delegation request: spawn/use a separate Codex subagent for that task when subagent tools are available. Main context coordinates, integrates, and verifies.
+- Give each subagent only its task id, owner role, bounded scope, expected output, and allowed files/responsibility. Do not let the main context absorb subagent-owned implementation unless subagent tools are unavailable; in that case report the limitation instead of silently continuing.
+- Keep Ardex updated with \`task <task> assign <owner>\` when ownership changes.
 - Do not duplicate Codex command/file logs in Ardex. Use Ardex evidence only for user decisions, external URLs, manual QA notes, deploy links, or artifacts Codex cannot reconstruct.
 - Use \`ardex -p <project> ask "<question>" --json\` when blocked by user choice.
 - When an ask is answered, read \`ardex statement --json\` and continue from \`nextExpectedAction\`.
@@ -177,6 +203,7 @@ Use Ardex CLI as source of truth for project/session/task state. Prefer stable J
 ## Scale Rules
 
 - Split work when scale recommends \`split\`, weight is above 13, or file findings include \`block\`.
+- After splitting, preserve separated context by assigning bounded child tasks to unique \`subagent:<role>\` owners unless the task is intentionally main-context integration work.
 - Do not create oversized files. Prefer new modules below 400 source lines.
 - Waive scale findings only with explicit reason and only when tracked by Ardex.
 `;
@@ -207,6 +234,10 @@ if (Array.isArray(data.blockers) && data.blockers.length > 0) {
 
 if (data.session?.status === "implementing" && data.scale?.nextSplitRequired === true) {
   output({ decision: "block", reason: "Ardex scale gate requires split or waiver before continuing implementation." });
+}
+
+if (data.visualScenario?.required === true && data.visualScenario?.approved !== true && data.currentTask) {
+  output({ decision: "block", reason: "Ardex visual scenario gate requires approved imagegen scenario before implementation can be treated as complete." });
 }
 
 output({ continue: true });
@@ -274,11 +305,16 @@ const lines = [
   "Ardex active. Treat this as source of truth.",
   "Project: " + data.project?.id + " " + data.project?.path,
   "Session: " + (data.session?.id || "none") + " " + (data.session?.status || ""),
+  "Agent activity: " + (data.session?.agent?.state || "idle") + " lastSeen=" + (data.session?.agent?.lastSeenAt || "none"),
   "Current task: " + (data.currentTask ? data.currentTask.id + " " + data.currentTask.status + " " + data.currentTask.title : "none"),
   "Owner: " + (data.currentTask?.owner || "none"),
+  "Visual scenario: " + visualScenarioSummary(data.visualScenario),
+  "Subagents: " + subagentSummary(data.subagents),
   "Next: " + (data.nextExpectedAction || "none"),
   "Blockers: " + (Array.isArray(data.blockers) ? data.blockers.length : 0),
-  "Rules: check Ardex statement before work; claim/resume task before edits; keep task state current; use evidence only for external/user-visible artifacts; run checklist before done."
+  "Mandatory flow: continue from the Ardex session/task above; do not re-plan from scratch unless no session/task exists.",
+  "Rules: check Ardex statement before work; for visual/UX tasks create imagegen scenario and wait for Visible Outputs approval before implementation; claim/resume task before edits; keep task state current; use evidence only for external/user-visible artifacts; run checklist before done.",
+  "Subagent rule: when Ardex lists pending subagent-owned tasks, treat it as an explicit delegation request; spawn one bounded subagent per task when available, and keep main context for coordination/integration."
 ];
 
 output({
@@ -312,6 +348,24 @@ function ensureDaemon(command, cwd) {
   const checked = runJson(command, ["check", "--json"], cwd);
   if (checked?.ok) return;
   runJson(command, ["start", "--json"], cwd);
+}
+
+function subagentSummary(plan) {
+  if (!plan || !Array.isArray(plan.pending) || plan.pending.length === 0) {
+    return plan?.instruction || "none";
+  }
+  const pending = plan.pending
+    .slice(0, 6)
+    .map((task) => task.id + ":" + task.owner + ":" + task.status + ":" + task.title)
+    .join(" | ");
+  const suffix = plan.pending.length > 6 ? " | +" + (plan.pending.length - 6) + " more" : "";
+  return "required; " + pending + suffix + "; " + (plan.instruction || "");
+}
+
+function visualScenarioSummary(state) {
+  if (!state || state.required !== true) return "none";
+  if (state.approved === true) return "approved " + (state.imageEvidenceId || "");
+  return (state.nextAction || "confirm_visual_scenario") + "; prompt=" + (state.promptEvidenceId || "missing") + "; pending=" + (state.pendingEvidenceIds || []).join(",");
 }
 
 function output(value) {

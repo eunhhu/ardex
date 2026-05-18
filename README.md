@@ -67,6 +67,7 @@ bun run index.ts -p p_001 task t_001 set progress 1
 bun run index.ts -p p_001 task t_001 checklist --json
 bun run index.ts -p p_001 task t_001 done
 bun run index.ts -p p_001 task t_001 events --json
+bun run index.ts -p p_001 task t_001 scenario --json
 bun run index.ts -p p_001 statement --json
 ```
 
@@ -74,8 +75,9 @@ bun run index.ts -p p_001 statement --json
 
 ```bash
 bun run index.ts -p p_001 evidence add url --task t_001 --url http://localhost:3000 --summary "local demo"
+bun run index.ts -p p_001 evidence add generated_image --task t_001 --path output/scenario.png --kind visual_scenario_confirm --status candidate --summary "expected UX scenario"
 bun run index.ts -p p_001 evidence add note --task t_001 --summary "user approved compact layout"
-bun run index.ts -p p_001 evidence e_002 accept
+bun run index.ts -p p_001 evidence e_002 accept --comment "approved direction"
 bun run index.ts -p p_001 evidence ls --task t_001 --json
 bun run index.ts -p p_001 ask "Which UX direction?"
 bun run index.ts -p p_001 ask a_001 answer "Use compact dashboard"
@@ -119,6 +121,8 @@ The daemon serves a local dashboard, JSON dashboard snapshots, and SSE updates. 
 
 `ardex init` is idempotent. It removes stale Ardex-managed hook entries before writing the current entries, while preserving non-Ardex hooks.
 
+Existing installs are migrated automatically. `ardex check`, `ardex start`, `ardex status`, and stateful CLI commands refresh the managed skill, hook scripts, hook config entries, install-state, and SQLite migrations before continuing. Managed Ardex files are overwritten when stale; non-Ardex hook entries are preserved. If an older daemon is already running, `ardex start` and stateful CLI auto-start paths restart it with the current package version.
+
 For tests or isolated installs:
 
 ```bash
@@ -130,16 +134,23 @@ bun run index.ts init
 
 Dashboard controls support searchable project switching, session start, detailed task creation, priority reorder, scale check/split/waiver, ask answer, and optional artifact accept/reject. Task status, progress, pause/resume, done, delete, and owner assignment are agent-owned CLI/API controls, so the dashboard shows them as state instead of casual buttons.
 
+The dashboard first viewport is optimized for project review rather than raw evidence browsing: project implementation level, progress, current focus, readiness, visible outputs, and risks are shown first. Evidence remains in storage as agent receipts, but the UI demotes it to a collapsed `Verification Log` so users are not forced to parse command-like proof trails.
+
 Autonomous workflow controls now also include:
 
 - daemon auto-start for stateful CLI/hook paths
+- automatic migration for existing managed skill/hook installs after package upgrades
 - prompt-time Ardex statement injection through `UserPromptSubmit`
 - `project migrate-codex` for best-effort `$HOME/.codex` project migration
 - task pause/resume/delete/owner assignment with runtime and event history
 - ask answer resume markers through `statement.nextExpectedAction`
 - lightweight checklist before `task done`
-- scale-based child task generation with `subagent:<role>` owner routing
-- dashboard output panel for generated images, screenshots, prototypes, URLs, and browser diffs
+- VDD visual scenario gate: `qualityGate=visual` and UX-impactful tasks must create a scenario prompt, attach an imagegen `generated_image` candidate with `kind=visual_scenario_confirm`, and get dashboard approval before implementation claim/done
+- scale-based child task generation with unique `subagent:<role>` owners and prompt-time delegation guidance
+- dashboard output panel for generated images, screenshots, prototypes, URLs, browser diffs, and pending visual scenario approvals with review comments
+- session workflow sync on `statement`, scale, ask answer, claim, progress, pause/resume, delete, and done events so stale `planning` state is corrected before Codex plans
+- agent activity derived from session `lastSeenAt` and surfaced in CLI/API/dashboard as `running` or `idle`
+- sticky dashboard session strip with agent state, session status, goal, current task, and runtime visible while scrolling
 
 API contract: [docs/API.md](docs/API.md)
 

@@ -2,7 +2,7 @@ import { readConfig } from "./config.ts";
 import { migrateCodexProjects } from "./codex-migration.ts";
 import { checkDaemon, startDaemon, stopDaemon } from "./daemon.ts";
 import { usageError, daemonUnavailable } from "./errors.ts";
-import { initializeArdex } from "./init.ts";
+import { autoMigrateArdex, initializeArdex } from "./init.ts";
 import { getArdexPaths } from "./paths.ts";
 import { success, type CommandSuccess, VERSION } from "./output.ts";
 import {
@@ -20,6 +20,7 @@ import {
   currentSession,
   listProjects,
   restoreProject,
+  ensureVisualScenarioPrompt,
   listSessions,
   listTasks,
   pauseTask,
@@ -31,6 +32,8 @@ import {
   setTaskOwner,
   setTaskField,
   startSession,
+  syncSessionWorkflow,
+  visualScenarioState,
 } from "./repository.ts";
 import type { ParsedArgs } from "./cli-types.ts";
 import { parseOptions } from "./cli-options.ts";
@@ -39,6 +42,7 @@ import {
   formatStatement,
   helpData,
   projectSummary,
+  evidenceSummary,
   sessionSummary,
   checklistSummary,
   taskEventSummary,
@@ -69,6 +73,7 @@ export async function initCommand(): Promise<CommandSuccess> {
 }
 
 export async function checkCommand(): Promise<CommandSuccess> {
+  await autoMigrateArdex();
   const health = await checkDaemon();
   if (health === null) {
     throw daemonUnavailable("Ardex daemon is not running.");
@@ -80,6 +85,7 @@ export async function checkCommand(): Promise<CommandSuccess> {
 }
 
 export async function startCommand(): Promise<CommandSuccess> {
+  await autoMigrateArdex();
   const started = await startDaemon();
   return success(
     { daemon: "running", reused: started.reused, url: started.health.url, dbPath: started.health.dbPath, version: started.health.version, pid: started.health.pid },
@@ -94,6 +100,7 @@ export async function stopCommand(): Promise<CommandSuccess> {
 
 export async function statusCommand(): Promise<CommandSuccess> {
   const paths = getArdexPaths();
+  await autoMigrateArdex(paths);
   const [config, health] = await Promise.all([readConfig(paths), checkDaemon(paths)]);
   const running = health !== null;
   return success(
@@ -234,6 +241,8 @@ export async function statementCommand(parsed: ParsedArgs): Promise<CommandSucce
     if (action === "set") {
       if (field !== "next" || rest.length === 0) throw usageError("statement set supports only: next <text>.");
       setSessionField(db, project.alias, "next", rest.join(" "));
+    } else {
+      syncSessionWorkflow(db, project.alias, "statement");
     }
     const statement = buildStatement(db, project.alias);
     return success({ statement }, formatStatement(statement));
@@ -283,6 +292,16 @@ function taskItemCommand(db: Parameters<typeof requireTask>[0], projectAlias: st
   if (second === "checklist") {
     const checklist = buildProductionChecklist(db, projectAlias, first);
     return success({ checklist: checklistSummary(checklist) }, formatObject(checklistSummary(checklist)));
+  }
+  if (second === "scenario" || second === "visual-scenario") {
+    const project = requireProject(db, projectAlias);
+    const task = requireTask(db, first);
+    const options = parseOptions([third, ...rest].filter((item): item is string => item !== undefined));
+    const evidence = ensureVisualScenarioPrompt(db, project, task, options.prompt);
+    return success(
+      { evidence: evidenceSummary(evidence), visualScenario: visualScenarioState(db, project.id, task) },
+      formatObject(evidenceSummary(evidence)),
+    );
   }
   if (second === "done") {
     const task = completeTask(db, projectAlias, first);
