@@ -29,6 +29,7 @@ export async function installCodexIntegration(paths: ArdexPaths): Promise<CodexI
   const hooksDir = join(paths.home, "hooks");
   const stopScriptPath = join(hooksDir, "stop-check.mjs");
   const postToolUseScriptPath = join(hooksDir, "post-tool-use-evidence.mjs");
+  const userPromptScriptPath = join(hooksDir, "user-prompt-context.mjs");
   const hooksConfigPath = join(codexHome(), "hooks.json");
 
   await mkdir(dirname(skillPath), { recursive: true });
@@ -37,7 +38,14 @@ export async function installCodexIntegration(paths: ArdexPaths): Promise<CodexI
   await writeFile(skillPath, ardexSkillContent(), "utf8");
   await writeFile(stopScriptPath, stopHookScript(), "utf8");
   await writeFile(postToolUseScriptPath, postToolUseHookScript(), "utf8");
+  await writeFile(userPromptScriptPath, userPromptHookScript(), "utf8");
   await mergeHooksConfig(hooksConfigPath, [
+    {
+      event: "UserPromptSubmit",
+      entry: {
+        hooks: [{ type: "command", command: `${quote(process.execPath)} ${quote(userPromptScriptPath)}`, timeout: 10, statusMessage: "Loading Ardex statement" }],
+      },
+    },
     {
       event: "Stop",
       entry: {
@@ -56,8 +64,8 @@ export async function installCodexIntegration(paths: ArdexPaths): Promise<CodexI
   return {
     skillPath,
     hooksConfigPath,
-    hookScriptPaths: [stopScriptPath, postToolUseScriptPath],
-    managedPaths: [skillPath, stopScriptPath, postToolUseScriptPath, hooksConfigPath],
+    hookScriptPaths: [userPromptScriptPath, stopScriptPath, postToolUseScriptPath],
+    managedPaths: [skillPath, userPromptScriptPath, stopScriptPath, postToolUseScriptPath, hooksConfigPath],
   };
 }
 
@@ -79,10 +87,8 @@ async function mergeHooksConfig(
   const config = await readHooksConfig(path);
   config.hooks ??= {};
   for (const addition of additions) {
-    const entries = config.hooks[addition.event] ?? [];
-    if (!entries.some((entry) => sameHookEntry(entry, addition.entry))) {
-      entries.push(addition.entry);
-    }
+    const entries = (config.hooks[addition.event] ?? []).filter((entry) => !isManagedArdexHook(entry));
+    entries.push(addition.entry);
     config.hooks[addition.event] = entries;
   }
   await writeBackupIfExisting(path);
@@ -102,8 +108,18 @@ async function readHooksConfig(path: string): Promise<HooksConfig> {
   }
 }
 
-function sameHookEntry(left: HookEntry, right: HookEntry): boolean {
-  return left.matcher === right.matcher && left.hooks.some((hook) => right.hooks.some((candidate) => candidate.command === hook.command));
+function isManagedArdexHook(entry: HookEntry): boolean {
+  return entry.hooks.some((hook) => {
+    const command = hook.command.toLowerCase();
+    const status = hook.statusMessage?.toLowerCase() ?? "";
+    return (
+      command.includes("/.ardex/hooks/") ||
+      command.includes("stop-check.mjs") ||
+      command.includes("post-tool-use-evidence.mjs") ||
+      command.includes("user-prompt-context.mjs") ||
+      status.includes("ardex")
+    );
+  });
 }
 
 async function atomicWriteJson(path: string, value: unknown): Promise<void> {
@@ -143,6 +159,7 @@ Use Ardex CLI as source of truth for project/session/task state. Prefer stable J
 1. Run \`ardex check --json\`. If unavailable, run \`ardex start --json\`.
 2. Run \`ardex project current --json\`. If no project exists, ask before registering path.
 3. Run \`ardex statement --json\` before planning or editing.
+4. Treat Ardex hook context as current state. If it conflicts with memory, Ardex wins.
 
 ## Work Loop
 
@@ -157,6 +174,7 @@ Use Ardex CLI as source of truth for project/session/task state. Prefer stable J
 - Before done, run \`ardex -p <project> task <task> checklist --json\`.
 - Do not mark tasks done unless progress is 1 and required quality gate evidence exists.
 - At end of turn, run \`ardex -p <project> statement --json\` and report task, blockers, and evidence.
+- If a Stop hook blocks, fix the Ardex state/evidence instead of ignoring it.
 
 ## Scale Rules
 
@@ -193,7 +211,89 @@ if (data.session?.status === "implementing" && data.scale?.nextSplitRequired ===
   output({ decision: "block", reason: "Ardex scale gate requires split or waiver before continuing implementation." });
 }
 
+if (data.project?.id && data.currentTask?.id) {
+  const checklist = runJson(ardex, ["-p", data.project.id, "task", data.currentTask.id, "checklist", "--json"], cwd);
+  const failed = checklist?.data?.checklist?.items?.filter((item) => item.required && !item.passed) ?? [];
+  if (failed.length > 0) {
+    output({
+      decision: "block",
+      reason: "Ardex production checklist is incomplete for " + data.currentTask.id + ": " + failed.map((item) => item.id).join(", "),
+    });
+  }
+}
+
 output({ continue: true });
+
+async function readStdinJson() {
+  let raw = "";
+  for await (const chunk of process.stdin) raw += chunk;
+  try {
+    return raw.trim().length === 0 ? {} : JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+function runJson(command, args, cwd) {
+  const result = spawnSync(command, args, { cwd, encoding: "utf8", env: process.env, timeout: 3000 });
+  if (result.status !== 0 || !result.stdout) return null;
+  try {
+    return JSON.parse(result.stdout);
+  } catch {
+    return null;
+  }
+}
+
+function ensureDaemon(command, cwd) {
+  const checked = runJson(command, ["check", "--json"], cwd);
+  if (checked?.ok) return;
+  runJson(command, ["start", "--json"], cwd);
+}
+
+function output(value) {
+  process.stdout.write(JSON.stringify(value));
+  process.exit(0);
+}
+`;
+}
+
+function userPromptHookScript(): string {
+  return `#!/usr/bin/env node
+import { spawnSync } from "node:child_process";
+
+const input = await readStdinJson();
+const cwd = typeof input.cwd === "string" ? input.cwd : process.cwd();
+const ardex = process.env.ARDEX_BIN || "ardex";
+ensureDaemon(ardex, cwd);
+
+const project = runJson(ardex, ["project", "current", "--json"], cwd)?.data?.project?.id;
+if (!project) {
+  output({ continue: true, suppressOutput: true });
+}
+
+const statement = runJson(ardex, ["-p", project, "statement", "--json"], cwd);
+const data = statement?.data?.statement;
+if (!data) {
+  output({ continue: true, suppressOutput: true });
+}
+
+const lines = [
+  "Ardex active. Treat this as source of truth.",
+  "Project: " + data.project?.id + " " + data.project?.path,
+  "Session: " + (data.session?.id || "none") + " " + (data.session?.status || ""),
+  "Current task: " + (data.currentTask ? data.currentTask.id + " " + data.currentTask.status + " " + data.currentTask.title : "none"),
+  "Owner: " + (data.currentTask?.owner || "none"),
+  "Next: " + (data.nextExpectedAction || "none"),
+  "Blockers: " + (Array.isArray(data.blockers) ? data.blockers.length : 0),
+  "Rules: check Ardex statement before work; claim/resume task before edits; record evidence after verification; run checklist before done."
+];
+
+output({
+  hookSpecificOutput: {
+    hookEventName: "UserPromptSubmit",
+    additionalContext: lines.join("\\n")
+  }
+});
 
 async function readStdinJson() {
   let raw = "";

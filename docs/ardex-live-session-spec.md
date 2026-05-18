@@ -1673,8 +1673,10 @@ UI e2e:
 Codex integration smoke:
 
 1. Installed skill appears in Codex skill list after restart or reload.
-2. `Stop` hook reports missing evidence for active gated task.
-3. `PostToolUse` creates command/file evidence candidates without marking work done.
+2. Running `ardex init` repeatedly leaves exactly one Ardex entry per managed hook event.
+3. `UserPromptSubmit` hook injects current statement context.
+4. `Stop` hook reports missing evidence for active gated task.
+5. `PostToolUse` creates command/file evidence candidates without marking work done.
 
 ## 22. Autonomous Production Scope
 
@@ -1689,6 +1691,10 @@ Hooks must degrade gracefully:
 1. Try `ardex check --json`.
 2. If unavailable, run `ardex start --json`.
 3. If start fails, allow the Codex turn to continue and emit short diagnostic context instead of crashing the hook.
+
+Hook installation must be idempotent. `ardex init` removes stale Ardex-managed hook entries for `UserPromptSubmit`, `Stop`, and `PostToolUse` before installing the current entries, and it preserves non-Ardex hook entries.
+
+`UserPromptSubmit` injects the current Ardex statement into Codex context every turn. This is the fallback for cases where a Codex agent does not spontaneously follow the Ardex skill instructions. The injected context includes project, session, current task, owner, next expected action, blockers, and mandatory workflow rules.
 
 ### Codex Project/Thread Migration
 

@@ -52,6 +52,7 @@ test("init installs Codex skill and hooks without touching real home when overri
   expect(result.codex.skillPath).toEndWith("skills/ardex/SKILL.md");
   expect(await readFile(result.codex.skillPath, "utf8")).toContain("name: ardex");
   const hooks = JSON.parse(await readFile(result.codex.hooksConfigPath, "utf8")) as { hooks: Record<string, unknown[]> };
+  expect(hooks.hooks.UserPromptSubmit?.length).toBe(1);
   expect(hooks.hooks.Stop?.length).toBe(1);
   expect(hooks.hooks.PostToolUse?.length).toBe(1);
 });
@@ -67,9 +68,42 @@ test("init preserves existing hooks and writes backup", async () => {
 
   await initializeArdex(paths, { installCodex: true });
 
-  const hooks = JSON.parse(await readFile(hooksPath, "utf8")) as { hooks: { Stop: unknown[] } };
+  const hooks = JSON.parse(await readFile(hooksPath, "utf8")) as { hooks: { Stop: unknown[]; UserPromptSubmit: unknown[]; PostToolUse: unknown[] } };
   expect(hooks.hooks.Stop.length).toBe(2);
+  expect(hooks.hooks.UserPromptSubmit.length).toBe(1);
+  expect(hooks.hooks.PostToolUse.length).toBe(1);
   expect(await readFile(`${hooksPath}.ardex-backup`, "utf8")).toContain("echo keep");
+});
+
+test("init is idempotent and replaces stale Ardex hook entries", async () => {
+  const root = await tempRoot();
+  const paths = getArdexPaths(join(root, "ardex"));
+  process.env.ARDEX_SKILL_ROOT = join(root, "skills");
+  process.env.ARDEX_CODEX_HOME = join(root, "codex");
+  await mkdir(process.env.ARDEX_CODEX_HOME, { recursive: true });
+  const hooksPath = join(process.env.ARDEX_CODEX_HOME, "hooks.json");
+  await writeFile(
+    hooksPath,
+    `${JSON.stringify({
+      hooks: {
+        UserPromptSubmit: [{ hooks: [{ type: "command", command: "node /old/.ardex/hooks/user-prompt-context.mjs", statusMessage: "Loading Ardex statement" }] }],
+        Stop: [
+          { hooks: [{ type: "command", command: "echo keep" }] },
+          { hooks: [{ type: "command", command: "node /old/.ardex/hooks/stop-check.mjs", statusMessage: "Checking Ardex gates" }] },
+        ],
+        PostToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "node /old/.ardex/hooks/post-tool-use-evidence.mjs" }] }],
+      },
+    })}\n`,
+    "utf8",
+  );
+
+  await initializeArdex(paths, { installCodex: true });
+  await initializeArdex(paths, { installCodex: true });
+
+  const hooks = JSON.parse(await readFile(hooksPath, "utf8")) as { hooks: Record<string, unknown[]> };
+  expect(hooks.hooks.UserPromptSubmit?.length).toBe(1);
+  expect(hooks.hooks.Stop?.length).toBe(2);
+  expect(hooks.hooks.PostToolUse?.length).toBe(1);
 });
 
 test("task priority shifts and quality gate rejects missing evidence", async () => {

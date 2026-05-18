@@ -111,9 +111,12 @@ The daemon serves a local dashboard, JSON dashboard snapshots, and SSE updates. 
 `ardex init` installs:
 
 - `$HOME/.agents/skills/ardex/SKILL.md`
+- `$HOME/.ardex/hooks/user-prompt-context.mjs`
 - `$HOME/.ardex/hooks/stop-check.mjs`
 - `$HOME/.ardex/hooks/post-tool-use-evidence.mjs`
-- `$HOME/.codex/hooks.json` entries for `Stop` and `PostToolUse`
+- `$HOME/.codex/hooks.json` entries for `UserPromptSubmit`, `Stop`, and `PostToolUse`
+
+`ardex init` is idempotent. It removes stale Ardex-managed hook entries before writing the current entries, while preserving non-Ardex hooks.
 
 For tests or isolated installs:
 
@@ -129,6 +132,7 @@ Dashboard controls support session start/status/done, task add/claim/progress/do
 Autonomous workflow controls now also include:
 
 - daemon auto-start for stateful CLI/hook paths
+- prompt-time Ardex statement injection through `UserPromptSubmit`
 - `project migrate-codex` for best-effort `$HOME/.codex` project migration
 - task pause/resume/delete/owner assignment with runtime and event history
 - ask answer resume markers through `statement.nextExpectedAction`
