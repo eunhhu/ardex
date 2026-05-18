@@ -1,0 +1,407 @@
+import { ArdexError } from "./errors.ts";
+import { openDatabase } from "./db.ts";
+import type { ArdexPaths } from "./paths.ts";
+import {
+  answerAsk,
+  buildProductionChecklist,
+  buildStatement,
+  latestScaleReport,
+  listAsks,
+  listEvidence,
+  listProjects,
+  listScaleReports,
+  listSessions,
+  listTasks,
+  setEvidenceStatus,
+  taskRuntimeSeconds,
+  type Ask,
+  type Evidence,
+  type FileScaleFinding,
+  type Project,
+  type ScaleEstimate,
+  type ScaleReport,
+  type Session,
+  type Statement,
+  type Task,
+} from "./repository.ts";
+
+export type DashboardSnapshot = {
+  generatedAt: string;
+  project: ProjectSummary | null;
+  projects: ProjectSummary[];
+  statement: Statement | null;
+  sessions: SessionSummary[];
+  tasks: TaskSummary[];
+  evidence: EvidenceSummary[];
+  outputs: OutputSummary[];
+  asks: AskSummary[];
+  scale: {
+    latest: ScaleReportSummary | null;
+    reports: ScaleEstimateSummary[];
+  };
+};
+
+type ProjectSummary = {
+  id: string;
+  name: string;
+  path: string;
+  defaultWorkflow: string;
+};
+
+type SessionSummary = {
+  id: string;
+  status: string;
+  goal: string | null;
+  mode: string;
+  model: string | null;
+  currentTaskId: string | null;
+  currentTaskRef: string | null;
+  runtimeSeconds: number;
+  nextExpectedAction: string | null;
+};
+
+type TaskSummary = {
+  id: string;
+  title: string;
+  status: string;
+  progress: number;
+  priority: number;
+  importance: number;
+  owner: string;
+  qualityGate: string;
+  estimatedWeight: number | null;
+  contextRisk: number | null;
+  startedAt: string | null;
+  pausedAt: string | null;
+  resumedAt: string | null;
+  activeSeconds: number;
+  runtimeSeconds: number;
+  pauseReason: string | null;
+  checklistPassed: boolean;
+};
+
+type EvidenceSummary = {
+  id: string;
+  type: string;
+  status: string;
+  targetType: string;
+  targetRef: string | null;
+  summary: string;
+  payload: Record<string, unknown>;
+  media: OutputSummary | null;
+  createdAt: string;
+};
+
+type OutputSummary = {
+  id: string;
+  type: string;
+  taskRef: string | null;
+  summary: string;
+  path: string | null;
+  url: string | null;
+  renderableImage: boolean;
+  createdAt: string;
+};
+
+type AskSummary = {
+  id: string;
+  status: string;
+  question: string;
+  answer: string | null;
+  answerSource: string | null;
+  attachments: string[];
+  createdAt: string;
+  answeredAt: string | null;
+};
+
+type ScaleEstimateSummary = {
+  id: string;
+  targetType: string;
+  targetId: string | null;
+  weight: number;
+  complexity: string;
+  contextRisk: number;
+  modularityRisk: number;
+  recommendedAgent: string;
+  recommendedSplit: Record<string, unknown> | null;
+  basis: string;
+  createdAt: string;
+};
+
+type FileScaleFindingSummary = {
+  id: string;
+  path: string;
+  lineCount: number;
+  byteCount: number;
+  role: string;
+  severity: string;
+  reason: string;
+  recommendation: string;
+  waivedAt: string | null;
+  waiverStale: boolean;
+};
+
+type ScaleReportSummary = {
+  estimate: ScaleEstimateSummary;
+  findings: FileScaleFindingSummary[];
+  blocked: boolean;
+};
+
+export async function buildDashboardSnapshot(paths: ArdexPaths, projectRef?: string): Promise<DashboardSnapshot> {
+  const db = openDatabase(paths);
+  try {
+    const projects = listProjects(db);
+    const project = projectRef === undefined ? projects[0] : projects.find((item) => item.id === projectRef || item.alias === projectRef);
+    if (project === undefined) {
+      return emptySnapshot(projects);
+    }
+
+    const sessions = listSessions(db, project.alias);
+    const tasks = listTasks(db, project.alias);
+    const taskById = new Map(tasks.map((task) => [task.id, task]));
+    const sessionById = new Map(sessions.map((session) => [session.id, session]));
+    const latestScale = tryLatestScaleReport(db, project.alias);
+
+    return {
+      generatedAt: new Date().toISOString(),
+      project: projectSummary(project),
+      projects: projects.map(projectSummary),
+      statement: buildStatement(db, project.alias),
+      sessions: sessions.map((session) => sessionSummary(session, taskById)),
+      tasks: tasks.map((task) => taskSummary(db, project.alias, task)),
+      evidence: listEvidence(db, project.alias).map((item) => evidenceSummary(item, taskById, sessionById)),
+      outputs: listEvidence(db, project.alias).map((item) => outputSummary(item, taskById)).filter((item): item is OutputSummary => item !== null),
+      asks: listAsks(db, project.alias).map(askSummary),
+      scale: {
+        latest: latestScale === null ? null : scaleReportSummary(latestScale),
+        reports: listScaleReports(db, project.alias).map(scaleEstimateSummary),
+      },
+    };
+  } finally {
+    db.close();
+  }
+}
+
+export function readProjects(paths: ArdexPaths): ProjectSummary[] {
+  const db = openDatabase(paths);
+  try {
+    return listProjects(db).map(projectSummary);
+  } finally {
+    db.close();
+  }
+}
+
+export function answerAskForDashboard(paths: ArdexPaths, projectRef: string, askRef: string, answer: string): AskSummary {
+  return mutateDb(paths, (db) => askSummary(answerAsk(db, projectRef, askRef, answer)));
+}
+
+export function setEvidenceStatusForDashboard(
+  paths: ArdexPaths,
+  projectRef: string,
+  evidenceRef: string,
+  status: "accepted" | "rejected",
+): EvidenceSummary {
+  return mutateDb(paths, (db) => {
+    const evidence = setEvidenceStatus(db, projectRef, evidenceRef, status);
+    const tasks = listTasks(db, projectRef);
+    const sessions = listSessions(db, projectRef);
+    return evidenceSummary(evidence, new Map(tasks.map((task) => [task.id, task])), new Map(sessions.map((session) => [session.id, session])));
+  });
+}
+
+function mutateDb<T>(paths: ArdexPaths, callback: (db: ReturnType<typeof openDatabase>) => T): T {
+  const db = openDatabase(paths);
+  try {
+    return callback(db);
+  } finally {
+    db.close();
+  }
+}
+
+function emptySnapshot(projects: Project[]): DashboardSnapshot {
+  return {
+    generatedAt: new Date().toISOString(),
+    project: null,
+    projects: projects.map(projectSummary),
+    statement: null,
+    sessions: [],
+    tasks: [],
+    evidence: [],
+    outputs: [],
+    asks: [],
+    scale: {
+      latest: null,
+      reports: [],
+    },
+  };
+}
+
+function tryLatestScaleReport(db: ReturnType<typeof openDatabase>, projectRef: string): ScaleReport | null {
+  try {
+    return latestScaleReport(db, projectRef);
+  } catch (error) {
+    if (error instanceof ArdexError && error.code === "NOT_FOUND") {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function projectSummary(project: Project): ProjectSummary {
+  return {
+    id: project.alias,
+    name: project.name,
+    path: project.path,
+    defaultWorkflow: project.defaultWorkflow,
+  };
+}
+
+function sessionSummary(session: Session, taskById: Map<string, Task>): SessionSummary {
+  const currentTask = session.currentTaskId === null ? null : taskById.get(session.currentTaskId) ?? null;
+  return {
+    id: session.alias,
+    status: session.status,
+    goal: session.goal,
+    mode: session.mode,
+    model: session.model,
+    currentTaskId: session.currentTaskId,
+    currentTaskRef: currentTask?.alias ?? null,
+    runtimeSeconds: effectiveRuntimeSeconds(session),
+    nextExpectedAction: session.nextExpectedAction,
+  };
+}
+
+function taskSummary(db: ReturnType<typeof openDatabase>, projectRef: string, task: Task): TaskSummary {
+  const checklist = buildProductionChecklist(db, projectRef, task.alias);
+  return {
+    id: task.alias,
+    title: task.title,
+    status: task.status,
+    progress: task.progress,
+    priority: task.priority,
+    importance: task.importance,
+    owner: task.owner,
+    qualityGate: task.qualityGate,
+    estimatedWeight: task.estimatedWeight,
+    contextRisk: task.contextRisk,
+    startedAt: task.startedAt,
+    pausedAt: task.pausedAt,
+    resumedAt: task.resumedAt,
+    activeSeconds: task.activeSeconds,
+    runtimeSeconds: taskRuntimeSeconds(task),
+    pauseReason: task.pauseReason,
+    checklistPassed: checklist.passed,
+  };
+}
+
+function evidenceSummary(evidence: Evidence, taskById: Map<string, Task>, sessionById: Map<string, Session>): EvidenceSummary {
+  return {
+    id: evidence.alias,
+    type: evidence.type,
+    status: evidence.status,
+    targetType: evidence.targetType,
+    targetRef: targetRef(evidence, taskById, sessionById),
+    summary: evidence.summary,
+    payload: evidence.payload,
+    media: outputSummary(evidence, taskById),
+    createdAt: evidence.createdAt,
+  };
+}
+
+function outputSummary(evidence: Evidence, taskById: Map<string, Task>): OutputSummary | null {
+  if (evidence.status !== "accepted") {
+    return null;
+  }
+  if (!["screenshot", "generated_image", "prototype", "url", "browser_diff"].includes(evidence.type)) {
+    return null;
+  }
+  const path = typeof evidence.payload["path"] === "string" ? evidence.payload["path"] : null;
+  const url = typeof evidence.payload["url"] === "string" ? evidence.payload["url"] : null;
+  if (path === null && url === null) {
+    return null;
+  }
+  const source = url ?? path ?? "";
+  return {
+    id: evidence.alias,
+    type: evidence.type,
+    taskRef: evidence.targetType === "task" && evidence.targetId !== null ? taskById.get(evidence.targetId)?.alias ?? evidence.targetId : null,
+    summary: evidence.summary,
+    path,
+    url,
+    renderableImage: /^https?:\/\//.test(source) && /\.(png|jpe?g|gif|webp|avif)(\?|$)/i.test(source),
+    createdAt: evidence.createdAt,
+  };
+}
+
+function askSummary(ask: Ask): AskSummary {
+  return {
+    id: ask.alias,
+    status: ask.status,
+    question: ask.question,
+    answer: ask.answer,
+    answerSource: ask.answerSource,
+    attachments: ask.attachments,
+    createdAt: ask.createdAt,
+    answeredAt: ask.answeredAt,
+  };
+}
+
+function scaleEstimateSummary(estimate: ScaleEstimate): ScaleEstimateSummary {
+  return {
+    id: estimate.alias,
+    targetType: estimate.targetType,
+    targetId: estimate.targetId,
+    weight: estimate.weight,
+    complexity: estimate.complexity,
+    contextRisk: estimate.contextRisk,
+    modularityRisk: estimate.modularityRisk,
+    recommendedAgent: estimate.recommendedAgent,
+    recommendedSplit: estimate.recommendedSplit,
+    basis: estimate.basis,
+    createdAt: estimate.createdAt,
+  };
+}
+
+function fileScaleFindingSummary(finding: FileScaleFinding): FileScaleFindingSummary {
+  return {
+    id: finding.alias,
+    path: finding.path,
+    lineCount: finding.lineCount,
+    byteCount: finding.byteCount,
+    role: finding.role,
+    severity: finding.severity,
+    reason: finding.reason,
+    recommendation: finding.recommendation,
+    waivedAt: finding.waivedAt,
+    waiverStale: finding.waiverHash !== null && finding.waiverHash !== finding.contentHash,
+  };
+}
+
+function scaleReportSummary(report: ScaleReport): ScaleReportSummary {
+  return {
+    estimate: scaleEstimateSummary(report.estimate),
+    findings: report.findings.map(fileScaleFindingSummary),
+    blocked: report.blocked,
+  };
+}
+
+function targetRef(evidence: Evidence, taskById: Map<string, Task>, sessionById: Map<string, Session>): string | null {
+  if (evidence.targetId === null) {
+    return null;
+  }
+  if (evidence.targetType === "task") {
+    return taskById.get(evidence.targetId)?.alias ?? evidence.targetId;
+  }
+  if (evidence.targetType === "session") {
+    return sessionById.get(evidence.targetId)?.alias ?? evidence.targetId;
+  }
+  return evidence.targetId;
+}
+
+function effectiveRuntimeSeconds(session: Session): number {
+  if (session.endedAt !== null) {
+    return session.runtimeSeconds;
+  }
+  const startedAt = Date.parse(session.startedAt);
+  return Number.isFinite(startedAt) ? Math.max(session.runtimeSeconds, Math.floor((Date.now() - startedAt) / 1000)) : session.runtimeSeconds;
+}

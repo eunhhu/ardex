@@ -1676,7 +1676,130 @@ Codex integration smoke:
 2. `Stop` hook reports missing evidence for active gated task.
 3. `PostToolUse` creates command/file evidence candidates without marking work done.
 
-## 22. First Implementation Plan
+## 22. Autonomous Production Scope
+
+The production harness is not complete until the following behaviors are deterministic and visible in CLI, API, hooks, and dashboard.
+
+### Daemon Auto-Start
+
+All CLI and hook entry points except `init`, `start`, `stop`, `check`, `status`, and `daemon run` auto-start the daemon by default before reading or mutating Ardex state. `--no-start` disables this behavior and returns `DAEMON_UNAVAILABLE` when the daemon is required but not healthy.
+
+Hooks must degrade gracefully:
+
+1. Try `ardex check --json`.
+2. If unavailable, run `ardex start --json`.
+3. If start fails, allow the Codex turn to continue and emit short diagnostic context instead of crashing the hook.
+
+### Codex Project/Thread Migration
+
+`ardex project migrate-codex` scans `$CODEX_HOME` or `$HOME/.codex` for project-like absolute paths in known JSON/JSONL/TOML/text metadata. It must:
+
+1. Register only paths that exist on disk.
+2. Canonicalize by realpath.
+3. Deduplicate nested and repeated records.
+4. Prefer the closest matching project root when nested paths overlap.
+5. Record migration evidence with discovered count and skipped count.
+
+Migration is best-effort because Codex internal metadata is not a stable API. Ardex must not require private Codex metadata for normal operation.
+
+### Task Runtime And Pause/Resume
+
+Tasks must record active execution history, not only current status.
+
+Required task fields:
+
+1. `started_at`: first claim/resume timestamp.
+2. `paused_at`: current pause timestamp, nullable.
+3. `resumed_at`: last resume timestamp, nullable.
+4. `active_seconds`: accumulated runtime excluding paused time.
+5. `pause_reason`: latest pause reason, nullable.
+
+Required task event types:
+
+`created | claimed | paused | resumed | progress | owner_changed | priority_changed | edited | deleted | completed | checklist`
+
+Pause semantics:
+
+1. `task <id> pause --reason "..."` sets status `paused`, accumulates runtime, clears session `current_task_id`, and records an event.
+2. `task <id> resume` sets status `active`, sets session `current_task_id`, updates `resumed_at`, and records an event.
+3. A paused task is not counted as active work but remains an open task.
+4. Dashboard must show paused tasks, pause reason, and runtime.
+
+### Task Edit/Delete/Reorder
+
+Task edit, delete, and priority reorder must be available from both CLI and UI.
+
+1. `task <id> set priority N` shifts other priorities and leaves no duplicates.
+2. `task <id> delete` drops the task, compacts priorities, clears session references, and records a delete event before removal.
+3. UI mutations use the same repository functions as CLI.
+4. SSE updates must show reorder/delete without reload.
+
+### Subagent Ownership
+
+Task owner is a first-class routing hint:
+
+1. `main`: current Codex agent owns the task.
+2. `subagent:<role>`: work should be delegated to a subagent role such as `explorer`, `worker`, `reviewer`, or custom role.
+3. `user`: blocked on user action.
+
+Dashboard must show owner on every task and support owner reassignment. Scale recommendations may set owner automatically when generating split tasks.
+
+### Ask Answer Resume Loop
+
+When an ask is answered:
+
+1. Ask status becomes `answered`.
+2. If no other open asks exist, blocked sessions restore `previous_status`.
+3. `next_expected_action` becomes `resume:<task_id>` when a current or latest paused/active task exists.
+4. Dashboard shows the answered ask and the resumed next action immediately through SSE.
+5. Codex startup/Stop hooks read `ardex statement --json` and continue from `resume:<task_id>` instead of asking the same question again.
+
+### SDD/VDD Artifact Gate
+
+Spec-driven and visual-driven tasks must have proof artifacts before done.
+
+Required evidence types:
+
+1. `spec`: spec, acceptance criteria, or implementation plan artifact.
+2. `acceptance`: checked acceptance criteria.
+3. `screenshot`: rendered UI or generated image.
+4. `browser_diff`: browser comparison, screenshot diff, or manual visual diff note.
+5. `prototype`: runnable toy/demo scenario output.
+
+Gate matrix:
+
+1. `quality_gate=spec`: requires accepted `spec` or `acceptance` evidence.
+2. `quality_gate=visual`: requires accepted `screenshot` and accepted `browser_diff` or `url` evidence.
+3. `quality_gate=demo`: requires accepted `prototype` or `url` evidence.
+4. `quality_gate=test`: requires accepted `test` evidence with `pass=true`.
+5. SDD/VDD session done requires at least one final session evidence item: `spec`, `prototype`, `screenshot`, `url`, or `acceptance`.
+
+Generated images are stored as `generated_image` evidence with `payload.path` or `payload.url`. Dashboard renders HTTP image URLs inline and lists local artifact paths safely.
+
+### Scale-Based Roadmap Split And Assignment
+
+Scale reports must drive planning, not only blocking.
+
+1. Weight `>13`, `recommendedAgent=split`, or blocking source files create split recommendations.
+2. `scale split --task <id>` creates child tasks with balanced estimated weights.
+3. Generated child tasks inherit quality gate, acceptance context, and priority order.
+4. Child owners are assigned by weight: `low` stays `main`, `standard` can use `subagent:worker`, `strong` uses `subagent:worker`, `split` remains blocked until split again.
+5. The dashboard shows roadmap imbalance and owner distribution before implementation starts.
+
+### Production Checklist
+
+Before `task done`, Ardex runs a deterministic checklist:
+
+1. Progress is `1`.
+2. Required gate evidence exists and is accepted.
+3. Latest scale report is present and not blocking implementation.
+4. Open asks do not target the task.
+5. SDD/VDD tasks have spec/visual/demo artifacts where required.
+6. Runtime/pause state is coherent.
+
+The checklist is returned by `task <id> checklist --json`, shown in the dashboard, and stored as a `checklist` task event when `done` is attempted.
+
+## 23. First Implementation Plan
 
 Phase 0: Core shell
 
@@ -1728,3 +1851,13 @@ Phase 6: Deferred automation
 1. Add `codex exec --json` import adapter.
 2. Add low-model scale estimator.
 3. Add advisor execution.
+
+Phase 7: Autonomous production harness
+
+1. Enforce daemon auto-start in CLI and hooks.
+2. Add Codex project/thread migration adapter.
+3. Add task runtime events, pause/resume, edit/delete/reorder, and owner assignment.
+4. Add ask answered resume loop.
+5. Add SDD/VDD artifact evidence types and production checklist.
+6. Add scale split to roadmap tasks with owner routing.
+7. Add generated image/scenario output panels to dashboard.

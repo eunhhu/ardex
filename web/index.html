@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Ardex Live Session</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <strong>Ardex</strong>
+        <span>Live Session</span>
+      </div>
+      <div class="project-switcher">
+        <select id="projectSelect" aria-label="Project"></select>
+        <span id="connection" class="connection">offline</span>
+      </div>
+    </header>
+    <main>
+      <div id="errorBanner" class="error-banner" hidden></div>
+      <section class="summary-grid" aria-label="Session summary">
+        <article class="summary-card" id="goalCard"></article>
+        <article class="summary-card" id="statusCard"></article>
+        <article class="summary-card" id="taskCard"></article>
+        <article class="summary-card" id="scaleCard"></article>
+      </section>
+      <section class="work-grid">
+        <section class="panel task-panel">
+          <div class="panel-head">
+            <h2>Tasks</h2>
+            <span id="taskCount" class="muted"></span>
+          </div>
+          <div id="tasks"></div>
+        </section>
+        <aside class="side-stack">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Asks</h2>
+              <span id="askCount" class="muted"></span>
+            </div>
+            <div id="asks"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Outputs</h2>
+              <span id="outputCount" class="muted"></span>
+            </div>
+            <div id="outputs"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Evidence</h2>
+              <span id="evidenceCount" class="muted"></span>
+            </div>
+            <div id="evidence"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Scale</h2>
+              <span id="scaleCount" class="muted"></span>
+            </div>
+            <div id="scale"></div>
+          </section>
+        </aside>
+      </section>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
