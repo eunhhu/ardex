@@ -119,6 +119,8 @@ The daemon serves a local dashboard, JSON dashboard snapshots, and SSE updates. 
 
 `ardex init` is idempotent. It removes stale Ardex-managed hook entries before writing the current entries, while preserving non-Ardex hooks.
 
+Existing installs are migrated automatically. `ardex check`, `ardex start`, `ardex status`, and stateful CLI commands refresh the managed skill, hook scripts, hook config entries, install-state, and SQLite migrations before continuing. Managed Ardex files are overwritten when stale; non-Ardex hook entries are preserved. If an older daemon is already running, `ardex start` and stateful CLI auto-start paths restart it with the current package version.
+
 For tests or isolated installs:
 
 ```bash
@@ -133,6 +135,7 @@ Dashboard controls support searchable project switching, session start, detailed
 Autonomous workflow controls now also include:
 
 - daemon auto-start for stateful CLI/hook paths
+- automatic migration for existing managed skill/hook installs after package upgrades
 - prompt-time Ardex statement injection through `UserPromptSubmit`
 - `project migrate-codex` for best-effort `$HOME/.codex` project migration
 - task pause/resume/delete/owner assignment with runtime and event history

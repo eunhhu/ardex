@@ -1697,6 +1697,15 @@ Hook installation must be idempotent. `ardex init` removes stale Ardex-managed h
 
 `UserPromptSubmit` injects the current Ardex statement into Codex context every turn. This is the fallback for cases where a Codex agent does not spontaneously follow the Ardex skill instructions. The injected context includes project, session, current task, owner, next expected action, blockers, and mandatory workflow rules.
 
+Existing installs must migrate automatically after package upgrades:
+
+1. `ardex check`, `ardex start`, `ardex status`, and stateful CLI commands run install migration before their normal operation.
+2. Migration runs SQLite migrations, refreshes managed `$HOME/.agents/skills/ardex/SKILL.md`, refreshes managed hook scripts, removes stale Ardex-owned hook entries, and writes current hook entries.
+3. Managed Ardex files may be overwritten when stale.
+4. Non-Ardex hooks and config entries must be preserved.
+5. Repeated migration must be idempotent and avoid rewriting files when generated content is already current.
+6. If a daemon is already running with an older package version, `ardex start` and stateful CLI auto-start paths stop it and start the current daemon version.
+
 ### Codex Project/Thread Migration
 
 `ardex project migrate-codex` scans `$CODEX_HOME` or `$HOME/.codex` for project-like absolute paths in known JSON/JSONL/TOML/text metadata. It must:

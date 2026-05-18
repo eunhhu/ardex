@@ -2,7 +2,7 @@ import { readConfig } from "./config.ts";
 import { migrateCodexProjects } from "./codex-migration.ts";
 import { checkDaemon, startDaemon, stopDaemon } from "./daemon.ts";
 import { usageError, daemonUnavailable } from "./errors.ts";
-import { initializeArdex } from "./init.ts";
+import { autoMigrateArdex, initializeArdex } from "./init.ts";
 import { getArdexPaths } from "./paths.ts";
 import { success, type CommandSuccess, VERSION } from "./output.ts";
 import {
@@ -69,6 +69,7 @@ export async function initCommand(): Promise<CommandSuccess> {
 }
 
 export async function checkCommand(): Promise<CommandSuccess> {
+  await autoMigrateArdex();
   const health = await checkDaemon();
   if (health === null) {
     throw daemonUnavailable("Ardex daemon is not running.");
@@ -80,6 +81,7 @@ export async function checkCommand(): Promise<CommandSuccess> {
 }
 
 export async function startCommand(): Promise<CommandSuccess> {
+  await autoMigrateArdex();
   const started = await startDaemon();
   return success(
     { daemon: "running", reused: started.reused, url: started.health.url, dbPath: started.health.dbPath, version: started.health.version, pid: started.health.pid },
@@ -94,6 +96,7 @@ export async function stopCommand(): Promise<CommandSuccess> {
 
 export async function statusCommand(): Promise<CommandSuccess> {
   const paths = getArdexPaths();
+  await autoMigrateArdex(paths);
   const [config, health] = await Promise.all([readConfig(paths), checkDaemon(paths)]);
   const running = health !== null;
   return success(

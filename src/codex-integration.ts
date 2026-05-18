@@ -35,10 +35,10 @@ export async function installCodexIntegration(paths: ArdexPaths): Promise<CodexI
   await mkdir(dirname(skillPath), { recursive: true });
   await mkdir(hooksDir, { recursive: true });
   await mkdir(dirname(hooksConfigPath), { recursive: true });
-  await writeFile(skillPath, ardexSkillContent(), "utf8");
-  await writeFile(stopScriptPath, stopHookScript(), "utf8");
-  await writeFile(legacyPostToolUseScriptPath, disabledPostToolUseHookScript(), "utf8");
-  await writeFile(userPromptScriptPath, userPromptHookScript(), "utf8");
+  await writeTextIfChanged(skillPath, ardexSkillContent());
+  await writeTextIfChanged(stopScriptPath, stopHookScript());
+  await writeTextIfChanged(legacyPostToolUseScriptPath, disabledPostToolUseHookScript());
+  await writeTextIfChanged(userPromptScriptPath, userPromptHookScript());
   await mergeHooksConfig(hooksConfigPath, [
     {
       event: "UserPromptSubmit",
@@ -90,7 +90,6 @@ async function mergeHooksConfig(
     entries.push(addition.entry);
     config.hooks[addition.event] = entries;
   }
-  await writeBackupIfExisting(path);
   await atomicWriteJson(path, config);
 }
 
@@ -121,9 +120,33 @@ function isManagedArdexHook(entry: HookEntry): boolean {
   });
 }
 
+async function writeTextIfChanged(path: string, value: string): Promise<void> {
+  try {
+    if ((await readFile(path, "utf8")) === value) {
+      return;
+    }
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+      throw error;
+    }
+  }
+  await writeFile(path, value, "utf8");
+}
+
 async function atomicWriteJson(path: string, value: unknown): Promise<void> {
+  const next = `${JSON.stringify(value, null, 2)}\n`;
+  try {
+    if ((await readFile(path, "utf8")) === next) {
+      return;
+    }
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+      throw error;
+    }
+  }
+  await writeBackupIfExisting(path);
   const tmpPath = `${path}.${process.pid}.${crypto.randomUUID()}.tmp`;
-  await writeFile(tmpPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  await writeFile(tmpPath, next, "utf8");
   await rename(tmpPath, path);
 }
 

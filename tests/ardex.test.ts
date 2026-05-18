@@ -6,6 +6,7 @@ import { handleDashboardRequest } from "../src/dashboard.ts";
 import { initializeStorage } from "../src/daemon.ts";
 import { openDatabase } from "../src/db.ts";
 import { initializeArdex } from "../src/init.ts";
+import { checkCommand } from "../src/cli-core-commands.ts";
 import { getArdexPaths } from "../src/paths.ts";
 import { migrateCodexProjects } from "../src/codex-migration.ts";
 import {
@@ -41,6 +42,7 @@ afterEach(async () => {
   }
   delete process.env.ARDEX_SKILL_ROOT;
   delete process.env.ARDEX_CODEX_HOME;
+  delete process.env.ARDEX_HOME;
 });
 
 test("init installs Codex skill and hooks without touching real home when overridden", async () => {
@@ -112,6 +114,39 @@ test("init is idempotent and replaces stale Ardex hook entries", async () => {
   expect(hooks.hooks.UserPromptSubmit?.length).toBe(1);
   expect(hooks.hooks.Stop?.length).toBe(2);
   expect(hooks.hooks.PostToolUse).toBeUndefined();
+});
+
+test("check auto-migrates stale installed Codex integration", async () => {
+  const root = await tempRoot();
+  process.env.ARDEX_HOME = join(root, "ardex");
+  process.env.ARDEX_SKILL_ROOT = join(root, "skills");
+  process.env.ARDEX_CODEX_HOME = join(root, "codex");
+  await mkdir(join(process.env.ARDEX_SKILL_ROOT, "ardex"), { recursive: true });
+  await mkdir(process.env.ARDEX_CODEX_HOME, { recursive: true });
+  await writeFile(join(process.env.ARDEX_SKILL_ROOT, "ardex", "SKILL.md"), "old skill\n", "utf8");
+  const hooksPath = join(process.env.ARDEX_CODEX_HOME, "hooks.json");
+  await writeFile(
+    hooksPath,
+    `${JSON.stringify({
+      hooks: {
+        PostToolUse: [{ hooks: [{ type: "command", command: "node /old/.ardex/hooks/post-tool-use-evidence.mjs" }] }],
+      },
+    })}\n`,
+    "utf8",
+  );
+
+  try {
+    await checkCommand();
+  } catch {
+    // The daemon is intentionally not running; migration must happen before that failure.
+  }
+
+  const skill = await readFile(join(process.env.ARDEX_SKILL_ROOT, "ardex", "SKILL.md"), "utf8");
+  const hooks = JSON.parse(await readFile(hooksPath, "utf8")) as { hooks: Record<string, unknown[]> };
+  expect(skill).toContain("statement.subagents.required");
+  expect(hooks.hooks.PostToolUse).toBeUndefined();
+  expect(hooks.hooks.UserPromptSubmit?.length).toBe(1);
+  expect(hooks.hooks.Stop?.length).toBe(1);
 });
 
 test("task priority shifts and quality gate is advisory", async () => {

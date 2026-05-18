@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { installCodexIntegration, type CodexInstallResult } from "./codex-integration.ts";
 import { initializeStorage } from "./daemon.ts";
+import { VERSION } from "./output.ts";
 import { getArdexPaths, type ArdexPaths } from "./paths.ts";
 
 export async function initializeArdex(paths?: ArdexPaths): Promise<{
@@ -39,6 +40,7 @@ export async function initializeArdex(
     `${JSON.stringify(
       {
         version: 1,
+        packageVersion: VERSION,
         managedPaths: uniqueStrings([...(installState.managedPaths ?? []), ...(codex?.managedPaths ?? [])]),
         createdAt: installState.createdAt ?? new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -56,6 +58,16 @@ export async function initializeArdex(
     schemaVersion: storage.schemaVersion,
     codex,
   };
+}
+
+export async function autoMigrateArdex(paths: ArdexPaths = getArdexPaths()): Promise<{
+  home: string;
+  dbPath: string;
+  installStatePath: string;
+  schemaVersion: number;
+  codex: CodexInstallResult;
+}> {
+  return await initializeArdex(paths, { installCodex: true });
 }
 
 async function readInstallState(paths: ArdexPaths): Promise<{ managedPaths?: string[]; createdAt?: string }> {

@@ -51,7 +51,10 @@ export async function startDaemon(paths: ArdexPaths = getArdexPaths()): Promise<
 
   const current = await checkDaemon(paths);
   if (current !== null) {
-    return { health: current, reused: true };
+    if (current.version === VERSION) {
+      return { health: current, reused: true };
+    }
+    await stopDaemon(paths);
   }
 
   const config = await readConfig(paths);
