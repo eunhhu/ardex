@@ -23,7 +23,10 @@ export function VisibleOutputsPanel({ outputs, projectId, mutate }: { outputs: O
       </div>
       {folded.length > 0 && (
         <details class="folded-outputs">
-          <summary>Processed outputs <span class="muted">{folded.length}</span></summary>
+          <summary>
+            <span class="fold-label"><span class="fold-caret" aria-hidden="true" />Processed outputs</span>
+            <span class="fold-action"><span class="fold-show">Show</span><span class="fold-hide">Hide</span> {folded.length}</span>
+          </summary>
           <div class="folded-output-list">
             {folded.map((output) => (
               <OutputItem key={output.id} output={output} projectId={projectId} mutate={mutate} mode="compact" />

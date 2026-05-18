@@ -17,25 +17,23 @@
   display: flex;
   flex: 1 1 560px;
   align-items: center;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 6px;
   min-width: 0;
   max-width: min(820px, 100%);
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: visible;
   border: 1px solid rgba(216, 224, 227, 0.92);
   border-radius: 8px;
   padding: 6px;
   background: rgba(255, 255, 255, 0.92);
   box-shadow: 0 8px 20px rgba(23, 32, 37, 0.08);
-  scrollbar-width: thin;
 }
 
 .strip-state,
 .strip-item {
   display: inline-flex;
   align-items: center;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   min-height: 24px;
   min-width: 0;
   max-width: 100%;
@@ -44,7 +42,7 @@
   padding: 0 8px;
   font-size: 12px;
   font-weight: 700;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .strip-state.running {
@@ -140,4 +138,31 @@
 .connection.offline {
   background: var(--bad-weak);
   color: var(--bad);
+}
+
+@media (max-width: 560px) {
+  .topbar {
+    gap: 10px;
+    padding: 10px 12px;
+  }
+
+  .session-strip {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .strip-state,
+  .strip-item,
+  .strip-goal,
+  .strip-task {
+    width: 100%;
+    flex: 1 1 auto;
+  }
+
+  .strip-goal,
+  .strip-task {
+    grid-column: 1 / -1;
+  }
 }

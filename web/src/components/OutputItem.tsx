@@ -1,7 +1,7 @@
 import { useState } from "preact/hooks";
 import { enc, post } from "../api.ts";
 import type { OutputSummary } from "../types.ts";
-import { Pill, type Mutate } from "./shared.tsx";
+import { MetadataBadge, type Mutate } from "./shared.tsx";
 
 type OutputItemMode = "preview" | "compact";
 
@@ -11,7 +11,7 @@ export function OutputItem({ output, projectId, mutate, mode = "preview" }: { ou
   const previewSource = output.previewUrl || source;
   const level = output.status === "accepted" ? "good" : output.status === "rejected" ? "bad" : "warn";
   const review = (action: "accept" | "reject") => mutate(() => post(`/api/projects/${enc(projectId)}/evidence/${enc(output.id)}/${action}`, { comment }));
-  const label = output.visualScenario ? `scenario ${output.status}` : output.format;
+  const typeLabel = output.visualScenario ? "scenario" : output.format;
   const createdAt = formatOutputTime(output.createdAt);
 
   if (mode === "compact") {
@@ -20,9 +20,13 @@ export function OutputItem({ output, projectId, mutate, mode = "preview" }: { ou
         <summary class="output-compact-summary">
           <span class="output-compact-title">{output.summary}</span>
           <span class="output-compact-meta">
-            <span class={`pill ${level}`}>{label}</span>
-            {output.taskRef && <span class="pill">task {output.taskRef}</span>}
-            <span class="pill">{createdAt}</span>
+            <span class={`pill metadata-badge metadata-badge--status metadata-badge--state-${output.status} ${level}`}>
+              <span class="metadata-badge-label">Status</span>
+              <span class="metadata-badge-value">{output.status}</span>
+            </span>
+            <MetadataBadge label="Type" value={typeLabel} tone="type" state={output.type} />
+            {output.taskRef && <MetadataBadge label="Task" value={output.taskRef} tone="task" />}
+            <MetadataBadge label="Time" value={createdAt} tone="time" />
             <span class="output-expand">Expand</span>
           </span>
         </summary>
@@ -33,7 +37,13 @@ export function OutputItem({ output, projectId, mutate, mode = "preview" }: { ou
 
   return (
     <article class={`item output-item output-preview ${output.visualScenario ? "visual-scenario" : ""}`}>
-      <div class="item-head"><div class="item-title">{output.summary}</div><span class={`pill ${level}`}>{label}</span></div>
+      <div class="item-head">
+        <div class="item-title">{output.summary}</div>
+        <span class={`pill metadata-badge metadata-badge--status metadata-badge--state-${output.status} ${level}`}>
+          <span class="metadata-badge-label">Status</span>
+          <span class="metadata-badge-value">{output.status}</span>
+        </span>
+      </div>
       <OutputDetails output={output} source={previewSource} comment={comment} setComment={setComment} review={review} />
     </article>
   );
@@ -55,7 +65,12 @@ function OutputDetails({
   return (
     <div class="output-details">
       <OutputPreview output={output} source={source} />
-      <div class="meta"><Pill value={output.id} /><Pill value={output.type} />{output.taskRef && <Pill value={`task ${output.taskRef}`} />}<Pill value={formatOutputTime(output.createdAt)} /></div>
+      <div class="meta">
+        <MetadataBadge label="ID" value={output.id} tone="id" />
+        <MetadataBadge label="Type" value={output.type} tone="type" state={output.type} />
+        {output.taskRef && <MetadataBadge label="Task" value={output.taskRef} tone="task" />}
+        <MetadataBadge label="Time" value={formatOutputTime(output.createdAt)} tone="time" />
+      </div>
       <div class="subvalue">{output.url ? <a href={output.url} target="_blank" rel="noreferrer">{output.url}</a> : <span class="mono">{output.path}</span>}</div>
       {output.visualScenario && output.status === "accepted" && <div class="visual-state accepted">Approved visual scenario</div>}
       {output.visualScenario && output.prompt && <details><summary>Scenario prompt</summary><pre class="mono">{output.prompt}</pre></details>}

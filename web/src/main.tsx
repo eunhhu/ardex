@@ -203,8 +203,8 @@ function App() {
                   {completedTasks.length > 0 && (
                     <details class="completed-tasks">
                       <summary>
-                        <span>Completed</span>
-                        <span>{completedTasks.length}</span>
+                        <span class="fold-label"><span class="fold-caret" aria-hidden="true" />Completed</span>
+                        <span class="fold-action"><span class="fold-show">Show</span><span class="fold-hide">Hide</span> {completedTasks.length}</span>
                       </summary>
                       <div>
                         {completedTasks.map((task) => <TaskItem key={task.id} task={task} projectId={projectId} mutate={mutate} />)}
