@@ -6,7 +6,7 @@ import { handleDashboardRequest } from "../src/dashboard.ts";
 import { initializeStorage } from "../src/daemon.ts";
 import { openDatabase } from "../src/db.ts";
 import { initializeArdex } from "../src/init.ts";
-import { checkCommand } from "../src/cli-core-commands.ts";
+import { checkCommand, statementCommand } from "../src/cli-core-commands.ts";
 import { getArdexPaths } from "../src/paths.ts";
 import { migrateCodexProjects } from "../src/codex-migration.ts";
 import {
@@ -17,6 +17,7 @@ import {
   buildStatement,
   buildProductionChecklist,
   completeTask,
+  claimTask,
   deleteTask,
   listEvidence,
   listTaskEvents,
@@ -207,6 +208,70 @@ test("statement exposes subagent delegation plan", async () => {
   } finally {
     db.close();
   }
+});
+
+test("statement command syncs stale planning session into active workflow", async () => {
+  const { paths, db, project } = await dbFixture();
+  process.env.ARDEX_HOME = paths.home;
+  process.env.ARDEX_SKILL_ROOT = join(paths.home, "skills");
+  process.env.ARDEX_CODEX_HOME = join(paths.home, "codex");
+  let taskAlias = "";
+  try {
+    startSession(db, project.alias, { goal: "workflow" });
+    const task = addTask(db, project.alias, { title: "workflow task", qualityGate: "none" });
+    taskAlias = task.alias;
+    const scan = await scanScale({ projectPath: project.path, paths: [] });
+    storeScaleReport(db, project.alias, scan);
+    claimTask(db, project.alias, task.alias);
+    setSessionField(db, project.alias, "status", "planning");
+  } finally {
+    db.close();
+  }
+
+  const result = await statementCommand({
+    args: ["statement"],
+    commandName: "statement",
+    json: true,
+    noStart: false,
+    projectId: project.alias,
+  });
+  const statement = (result.data as { statement: ReturnType<typeof buildStatement> }).statement;
+
+  expect(statement.session?.status).toBe("implementing");
+  expect(statement.session?.agent.state).toBe("running");
+  expect(statement.currentTask?.id).toBe(taskAlias);
+  expect(statement.nextExpectedAction).toBe(`work:${taskAlias}`);
+});
+
+test("statement command preserves reviewing after final task completion", async () => {
+  const { paths, db, project } = await dbFixture();
+  process.env.ARDEX_HOME = paths.home;
+  process.env.ARDEX_SKILL_ROOT = join(paths.home, "skills");
+  process.env.ARDEX_CODEX_HOME = join(paths.home, "codex");
+  try {
+    startSession(db, project.alias, { goal: "reviewing" });
+    const task = addTask(db, project.alias, { title: "final task", qualityGate: "none" });
+    const scan = await scanScale({ projectPath: project.path, paths: [] });
+    storeScaleReport(db, project.alias, scan);
+    claimTask(db, project.alias, task.alias);
+    setTaskField(db, project.alias, task.alias, "progress", "1");
+    completeTask(db, project.alias, task.alias);
+    setSessionField(db, project.alias, "status", "specifying");
+  } finally {
+    db.close();
+  }
+
+  const result = await statementCommand({
+    args: ["statement"],
+    commandName: "statement",
+    json: true,
+    noStart: false,
+    projectId: project.alias,
+  });
+  const statement = (result.data as { statement: ReturnType<typeof buildStatement> }).statement;
+
+  expect(statement.session?.status).toBe("reviewing");
+  expect(statement.nextExpectedAction).toBe("review_session");
 });
 
 test("task delete compacts priorities and leaves delete event", async () => {

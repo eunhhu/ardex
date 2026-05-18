@@ -89,3 +89,28 @@ main {
   gap: 12px;
   align-content: start;
 }
+
+@media (max-width: 960px) {
+  .session-strip {
+    width: 100%;
+    max-width: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .session-strip {
+    align-items: stretch;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  .strip-state,
+  .strip-item {
+    flex: 1 1 128px;
+  }
+
+  .strip-goal,
+  .strip-task {
+    flex-basis: 100%;
+  }
+}

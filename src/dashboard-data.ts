@@ -12,8 +12,10 @@ import {
   listScaleReports,
   listSessions,
   listTasks,
+  sessionAgentActivity,
   setEvidenceStatus,
   taskRuntimeSeconds,
+  type AgentActivity,
   type Ask,
   type Evidence,
   type FileScaleFinding,
@@ -58,6 +60,8 @@ type SessionSummary = {
   currentTaskId: string | null;
   currentTaskRef: string | null;
   runtimeSeconds: number;
+  lastSeenAt: string;
+  agent: AgentActivity;
   nextExpectedAction: string | null;
 };
 
@@ -269,6 +273,8 @@ function sessionSummary(session: Session, taskById: Map<string, Task>): SessionS
     currentTaskId: session.currentTaskId,
     currentTaskRef: currentTask?.alias ?? null,
     runtimeSeconds: effectiveRuntimeSeconds(session),
+    lastSeenAt: session.lastSeenAt,
+    agent: sessionAgentActivity(session),
     nextExpectedAction: session.nextExpectedAction,
   };
 }

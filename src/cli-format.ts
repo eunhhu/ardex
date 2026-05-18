@@ -1,16 +1,17 @@
 import { VERSION } from "./output.ts";
-import type {
-  Ask,
-  Evidence,
-  FileScaleFinding,
-  ProductionChecklist,
-  Project,
-  ScaleEstimate,
-  ScaleReport,
-  Session,
-  Statement,
-  Task,
-  TaskEvent,
+import {
+  sessionAgentActivity,
+  type Ask,
+  type Evidence,
+  type FileScaleFinding,
+  type ProductionChecklist,
+  type Project,
+  type ScaleEstimate,
+  type ScaleReport,
+  type Session,
+  type Statement,
+  type Task,
+  type TaskEvent,
 } from "./repository.ts";
 
 export function projectSummary(project: Project): Record<string, unknown> {
@@ -33,6 +34,8 @@ export function sessionSummary(session: Session): Record<string, unknown> {
     mode: session.mode,
     currentTaskId: session.currentTaskId,
     runtimeSeconds: session.runtimeSeconds,
+    lastSeenAt: session.lastSeenAt,
+    agent: sessionAgentActivity(session),
     nextExpectedAction: session.nextExpectedAction,
   };
 }
@@ -170,7 +173,7 @@ export function formatStatement(statement: Statement): string {
     : `subagents: none${statement.subagents.reason ? ` (${statement.subagents.reason})` : ""}`;
   return [
     `project: ${statement.project.id} ${statement.project.path}`,
-    `session: ${statement.session?.id ?? "none"} ${statement.session?.status ?? ""}`,
+    `session: ${statement.session?.id ?? "none"} ${statement.session?.status ?? ""} agent:${statement.session?.agent.state ?? "idle"}`,
     `goal: ${statement.session?.goal ?? ""}`,
     `currentTask: ${statement.currentTask?.id ?? "none"} ${statement.currentTask?.title ?? ""}`,
     subagentLine,

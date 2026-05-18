@@ -28,6 +28,12 @@ export type Session = {
   runtimeSeconds: number;
 };
 
+export type AgentActivity = {
+  state: "running" | "idle";
+  lastSeenAt: string;
+  staleSeconds: number;
+};
+
 export type Task = {
   id: string;
   alias: string;
@@ -152,6 +158,8 @@ export type Statement = {
     mode: string;
     goal: string | null;
     runtimeSeconds: number;
+    lastSeenAt: string;
+    agent: AgentActivity;
   } | null;
   currentTask: {
     id: string;

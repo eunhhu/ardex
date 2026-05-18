@@ -3,7 +3,7 @@
 Daemon binds to `127.0.0.1` by default. Responses use one envelope:
 
 ```json
-{ "ok": true, "data": {}, "meta": { "surface": "dashboard", "version": "0.1.0" } }
+{ "ok": true, "data": {}, "meta": { "surface": "dashboard", "version": "0.1.3" } }
 ```
 
 Errors use:
@@ -12,7 +12,7 @@ Errors use:
 {
   "ok": false,
   "error": { "code": "VALIDATION_ERROR", "message": "Field title is required.", "details": {} },
-  "meta": { "surface": "dashboard", "version": "0.1.0" }
+  "meta": { "surface": "dashboard", "version": "0.1.3" }
 }
 ```
 
@@ -64,9 +64,9 @@ HTTP status mapping:
 - `POST /api/projects/:project/scale/findings/:finding/waive`
   Body: `{ "reason": "at least 20 characters" }`
 
-Dashboard snapshots include task runtime fields (`startedAt`, `pausedAt`, `resumedAt`, `activeSeconds`, `runtimeSeconds`, `pauseReason`), production checklist state, `statement.subagents` delegation guidance, and output artifacts extracted from accepted `screenshot`, `generated_image`, `prototype`, `url`, and `browser_diff` evidence.
+Dashboard snapshots include task runtime fields (`startedAt`, `pausedAt`, `resumedAt`, `activeSeconds`, `runtimeSeconds`, `pauseReason`), production checklist state, `statement.subagents` delegation guidance, `statement.session.agent` activity (`running|idle`, `lastSeenAt`, `staleSeconds`), and output artifacts extracted from accepted `screenshot`, `generated_image`, `prototype`, `url`, and `browser_diff` evidence.
 
-The dashboard UI exposes user-facing controls for project switching, session start, detailed task creation, task priority reorder, ask answer, scale operations, and optional artifact accept/reject. Agent-owned task status, progress, pause/resume, done, delete, and owner mutation remain CLI/API surfaces and are not presented as casual dashboard buttons.
+The dashboard UI exposes user-facing controls for project switching, session start, detailed task creation, task priority reorder, ask answer, scale operations, and optional artifact accept/reject. Agent-owned task status, progress, pause/resume, done, delete, and owner mutation remain CLI/API surfaces and are not presented as casual dashboard buttons. A sticky session strip remains visible while scrolling and shows agent activity, session status, goal, current task, and runtime.
 
 ## Security
 

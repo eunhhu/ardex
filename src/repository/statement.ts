@@ -1,8 +1,9 @@
 import { Database } from "bun:sqlite";
 import { requireProject } from "./projects.ts";
 import { getScaleSummary } from "./scale.ts";
+import { sessionAgentActivity } from "./sessions.ts";
 import { requireTask, taskRuntimeSeconds } from "./tasks.ts";
-import { type Statement, type Task } from "./types.ts";
+import { type Session, type Statement, type Task } from "./types.ts";
 import { type SessionRow, type TaskRow, sessionFromRow, taskFromRow } from "./rows.ts";
 
 export function buildStatement(db: Database, projectRef: string): Statement {
@@ -52,7 +53,9 @@ export function buildStatement(db: Database, projectRef: string): Statement {
             status: session.status,
             mode: session.mode,
             goal: session.goal,
-            runtimeSeconds: session.runtimeSeconds,
+            runtimeSeconds: sessionRuntimeSeconds(session),
+            lastSeenAt: session.lastSeenAt,
+            agent: sessionAgentActivity(session),
           },
     currentTask:
       currentTask === null
@@ -77,6 +80,14 @@ export function buildStatement(db: Database, projectRef: string): Statement {
     blockers: blockerRows.map((row) => `${row.alias}: ${row.question}`),
     nextExpectedAction: session?.nextExpectedAction ?? null,
   };
+}
+
+function sessionRuntimeSeconds(session: Session): number {
+  if (session.endedAt !== null) {
+    return session.runtimeSeconds;
+  }
+  const startedAt = Date.parse(session.startedAt);
+  return Number.isFinite(startedAt) ? Math.max(session.runtimeSeconds, Math.floor((Date.now() - startedAt) / 1000)) : session.runtimeSeconds;
 }
 
 function activeTaskOrNull(db: Database, taskId: string): Task | null {

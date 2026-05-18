@@ -5,11 +5,69 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 16px;
   min-height: 56px;
   padding: 10px 18px;
   border-bottom: 1px solid var(--line);
   background: rgba(245, 247, 248, 0.96);
+}
+
+.session-strip {
+  display: flex;
+  flex: 1 1 460px;
+  align-items: center;
+  gap: 6px;
+  min-width: 280px;
+  max-width: 820px;
+  overflow: hidden;
+  border: 1px solid rgba(216, 224, 227, 0.92);
+  border-radius: 8px;
+  padding: 6px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 8px 20px rgba(23, 32, 37, 0.08);
+}
+
+.strip-state,
+.strip-item {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  min-width: 0;
+  border-radius: 999px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.strip-state.running {
+  background: var(--good-weak);
+  color: var(--good);
+}
+
+.strip-state.idle {
+  background: var(--surface-strong);
+  color: var(--muted);
+}
+
+.strip-item {
+  gap: 5px;
+  background: var(--surface-strong);
+  color: var(--text);
+}
+
+.strip-item b {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.strip-goal,
+.strip-task {
+  flex: 1 1 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .brand,

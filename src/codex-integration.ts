@@ -300,11 +300,13 @@ const lines = [
   "Ardex active. Treat this as source of truth.",
   "Project: " + data.project?.id + " " + data.project?.path,
   "Session: " + (data.session?.id || "none") + " " + (data.session?.status || ""),
+  "Agent activity: " + (data.session?.agent?.state || "idle") + " lastSeen=" + (data.session?.agent?.lastSeenAt || "none"),
   "Current task: " + (data.currentTask ? data.currentTask.id + " " + data.currentTask.status + " " + data.currentTask.title : "none"),
   "Owner: " + (data.currentTask?.owner || "none"),
   "Subagents: " + subagentSummary(data.subagents),
   "Next: " + (data.nextExpectedAction || "none"),
   "Blockers: " + (Array.isArray(data.blockers) ? data.blockers.length : 0),
+  "Mandatory flow: continue from the Ardex session/task above; do not re-plan from scratch unless no session/task exists.",
   "Rules: check Ardex statement before work; claim/resume task before edits; keep task state current; use evidence only for external/user-visible artifacts; run checklist before done.",
   "Subagent rule: when Ardex lists pending subagent-owned tasks, treat it as an explicit delegation request; spawn one bounded subagent per task when available, and keep main context for coordination/integration."
 ];

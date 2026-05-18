@@ -31,6 +31,7 @@ import {
   setTaskOwner,
   setTaskField,
   startSession,
+  syncSessionWorkflow,
 } from "./repository.ts";
 import type { ParsedArgs } from "./cli-types.ts";
 import { parseOptions } from "./cli-options.ts";
@@ -237,6 +238,8 @@ export async function statementCommand(parsed: ParsedArgs): Promise<CommandSucce
     if (action === "set") {
       if (field !== "next" || rest.length === 0) throw usageError("statement set supports only: next <text>.");
       setSessionField(db, project.alias, "next", rest.join(" "));
+    } else {
+      syncSessionWorkflow(db, project.alias, "statement");
     }
     const statement = buildStatement(db, project.alias);
     return success({ statement }, formatStatement(statement));

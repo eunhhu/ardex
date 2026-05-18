@@ -39,12 +39,13 @@ export function render() {
     renderEmptyApp();
     return;
   }
-  const session = data.sessions[0] || null;
-  const activeTask = data.tasks.find((task) => task.id === session?.currentTaskRef) || null;
+  const session = currentSession(data);
+  const activeTask = currentTask(data, session);
   const openAsks = data.asks.filter((ask) => ask.status === "open");
   const latestScale = data.scale.latest;
   const blockingFindings = latestScale ? latestScale.findings.filter((finding) => finding.severity === "block" && !finding.waivedAt).length : 0;
 
+  renderSessionStrip(data, session, activeTask);
   els.goalCard.innerHTML = card("Goal", session?.goal || "No active goal", compactPath(data.project.path));
   els.statusCard.innerHTML = renderSessionCard(session);
   els.taskCard.innerHTML = card(
@@ -74,6 +75,7 @@ export function activeProject() {
 }
 
 function renderEmptyApp() {
+  renderSessionStrip(null, null, null);
   els.goalCard.innerHTML = card("Goal", "No project", "register a project from CLI");
   els.statusCard.innerHTML = card("Session", "Idle", "");
   els.taskCard.innerHTML = card("Current Task", "None", "");
@@ -95,6 +97,52 @@ function renderSessionCard(session) {
     return '<div class="label">Session</div><div class="value">No session</div><form class="stack-form" data-session-form><input name="goal" placeholder="Goal"><button>Start</button></form>';
   }
   return card("Session", session.status, "runtime " + fmtRuntime(session.runtimeSeconds) + " · " + session.mode);
+}
+
+function renderSessionStrip(data, session, task) {
+  const strip = document.getElementById("sessionStrip");
+  if (!strip) return;
+  if (!data?.project) {
+    strip.innerHTML = '<span class="strip-state idle">Idle</span><span class="strip-item"><b>Session</b>none</span><span class="strip-item"><b>Goal</b>no project</span>';
+    return;
+  }
+  const agent = session?.agent || data.statement?.session?.agent || { state: "idle", staleSeconds: null };
+  const agentRunning = agent.state === "running";
+  const stateClass = agentRunning ? "running" : "idle";
+  const stateText = agentRunning ? "Running" : "Idle";
+  const seenText = typeof agent.staleSeconds === "number" ? " · seen " + fmtRuntime(agent.staleSeconds) + " ago" : "";
+  const sessionStatus = session?.status || "none";
+  const goal = session?.goal || "No active goal";
+  const taskText = task ? task.id + " · " + task.title : data.statement?.nextExpectedAction || "No current task";
+  const runtime = session?.runtimeSeconds ?? task?.runtimeSeconds ?? 0;
+  strip.innerHTML =
+    '<span class="strip-state ' +
+    stateClass +
+    '">' +
+    h(stateText + seenText) +
+    '</span><span class="strip-item"><b>Session</b>' +
+    h(sessionStatus) +
+    '</span><span class="strip-item strip-goal"><b>Goal</b>' +
+    h(goal) +
+    '</span><span class="strip-item strip-task"><b>Task</b>' +
+    h(taskText) +
+    '</span><span class="strip-item"><b>Runtime</b>' +
+    h(fmtRuntime(runtime)) +
+    "</span>";
+}
+
+function currentSession(data) {
+  const statementSession = data.statement?.session || null;
+  const fallback = data.sessions[0] || null;
+  if (!statementSession) return fallback;
+  return { ...fallback, ...statementSession };
+}
+
+function currentTask(data, session) {
+  if (data.statement?.currentTask) {
+    return data.statement.currentTask;
+  }
+  return data.tasks.find((task) => task.id === session?.currentTaskRef) || null;
 }
 
 function renderTask(task) {

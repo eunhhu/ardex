@@ -753,7 +753,7 @@ Success envelope:
     "command": "task.done",
     "projectId": "p_001",
     "sessionId": "s_001",
-    "version": "0.1.0"
+    "version": "0.1.3"
   }
 }
 ```
@@ -773,7 +773,7 @@ Error envelope:
   },
   "meta": {
     "command": "task.done",
-    "version": "0.1.0"
+    "version": "0.1.3"
   }
 }
 ```
@@ -791,7 +791,7 @@ ardex check --json
     "daemon": "running",
     "url": "http://127.0.0.1:17373",
     "dbPath": "/Users/me/.ardex/ardex.db",
-    "version": "0.1.0"
+    "version": "0.1.3"
   }
 }
 ```
@@ -1102,7 +1102,7 @@ UX requirements:
 Project dashboard first viewport:
 
 1. Header: project name, path, daemon status, live connection status.
-2. Goal strip: current goal, session status, mode, runtime.
+2. Sticky session strip: agent running/idle state, current goal, session status, current task, next action, and runtime. It remains visible while scrolling and does not steal focus during SSE updates.
 3. Active work: current task, progress, quality gate, owner, next expected action.
 4. Blocker card: open asks, stale waivers, paused work, or scale blocks.
 5. Gate summary: scale, spec, visual, demo, readiness labels.
@@ -1695,7 +1695,20 @@ Hooks must degrade gracefully:
 
 Hook installation must be idempotent. `ardex init` removes stale Ardex-managed hook entries for `UserPromptSubmit`, `Stop`, and legacy `PostToolUse` before installing the current entries, and it preserves non-Ardex hook entries.
 
-`UserPromptSubmit` injects the current Ardex statement into Codex context every turn. This is the fallback for cases where a Codex agent does not spontaneously follow the Ardex skill instructions. The injected context includes project, session, current task, owner, next expected action, blockers, and mandatory workflow rules.
+`UserPromptSubmit` injects the current Ardex statement into Codex context every turn. This is the fallback for cases where a Codex agent does not spontaneously follow the Ardex skill instructions. The injected context includes project, session, agent activity, current task, owner, next expected action, blockers, and mandatory workflow rules.
+
+`ardex statement --json` is an enforcing read, not a passive read. Before returning the statement it synchronizes the current session workflow from authoritative state:
+
+1. Open asks force `blocked` and `next_expected_action = answer_ask`.
+2. Active task forces `implementing`.
+3. Active task with `progress >= 1` forces `verifying`.
+4. Paused task forces `blocked` and `next_expected_action = wait_for_resume:<task>`.
+5. Clear scale report with open tasks forces `specifying` and `next_expected_action = claim_task`.
+6. Split-required scale report forces `scaling` and `next_expected_action = split_or_waive_scale`.
+7. Completed final task moves the session to `reviewing`.
+8. Every workflow mutation updates `last_seen_at`; dashboard polling must not update `last_seen_at`.
+
+Agent running state is derived from `sessions.last_seen_at`, not from dashboard polling. A session is `running` when it is in a non-terminal, non-blocked status and was seen within the configured freshness window; otherwise it is `idle`.
 
 Existing installs must migrate automatically after package upgrades:
 

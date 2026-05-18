@@ -143,6 +143,9 @@ Autonomous workflow controls now also include:
 - lightweight checklist before `task done`
 - scale-based child task generation with unique `subagent:<role>` owners and prompt-time delegation guidance
 - dashboard output panel for generated images, screenshots, prototypes, URLs, and browser diffs
+- session workflow sync on `statement`, scale, ask answer, claim, progress, pause/resume, delete, and done events so stale `planning` state is corrected before Codex plans
+- agent activity derived from session `lastSeenAt` and surfaced in CLI/API/dashboard as `running` or `idle`
+- sticky dashboard session strip with agent state, session status, goal, current task, and runtime visible while scrolling
 
 API contract: [docs/API.md](docs/API.md)
 
