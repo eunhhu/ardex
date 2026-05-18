@@ -54,7 +54,7 @@ test("init installs Codex skill and hooks without touching real home when overri
   const hooks = JSON.parse(await readFile(result.codex.hooksConfigPath, "utf8")) as { hooks: Record<string, unknown[]> };
   expect(hooks.hooks.UserPromptSubmit?.length).toBe(1);
   expect(hooks.hooks.Stop?.length).toBe(1);
-  expect(hooks.hooks.PostToolUse?.length).toBe(1);
+  expect(hooks.hooks.PostToolUse).toBeUndefined();
 });
 
 test("init preserves existing hooks and writes backup", async () => {
@@ -68,10 +68,10 @@ test("init preserves existing hooks and writes backup", async () => {
 
   await initializeArdex(paths, { installCodex: true });
 
-  const hooks = JSON.parse(await readFile(hooksPath, "utf8")) as { hooks: { Stop: unknown[]; UserPromptSubmit: unknown[]; PostToolUse: unknown[] } };
+  const hooks = JSON.parse(await readFile(hooksPath, "utf8")) as { hooks: { Stop: unknown[]; UserPromptSubmit: unknown[]; PostToolUse?: unknown[] } };
   expect(hooks.hooks.Stop.length).toBe(2);
   expect(hooks.hooks.UserPromptSubmit.length).toBe(1);
-  expect(hooks.hooks.PostToolUse.length).toBe(1);
+  expect(hooks.hooks.PostToolUse).toBeUndefined();
   expect(await readFile(`${hooksPath}.ardex-backup`, "utf8")).toContain("echo keep");
 });
 
@@ -103,10 +103,10 @@ test("init is idempotent and replaces stale Ardex hook entries", async () => {
   const hooks = JSON.parse(await readFile(hooksPath, "utf8")) as { hooks: Record<string, unknown[]> };
   expect(hooks.hooks.UserPromptSubmit?.length).toBe(1);
   expect(hooks.hooks.Stop?.length).toBe(2);
-  expect(hooks.hooks.PostToolUse?.length).toBe(1);
+  expect(hooks.hooks.PostToolUse).toBeUndefined();
 });
 
-test("task priority shifts and quality gate rejects missing evidence", async () => {
+test("task priority shifts and quality gate is advisory", async () => {
   const { db, project } = await dbFixture();
   try {
     startSession(db, project.alias, { goal: "test" });
@@ -119,14 +119,6 @@ test("task priority shifts and quality gate rejects missing evidence", async () 
     ]);
 
     setTaskField(db, project.alias, first.alias, "progress", "1");
-    expect(() => completeTask(db, project.alias, first.alias)).toThrow("Task requires passing test evidence before done.");
-    addEvidence(db, project.alias, {
-      type: "test",
-      targetType: "task",
-      targetRef: first.alias,
-      summary: "bun test passed",
-      payload: { pass: true },
-    });
     expect(completeTask(db, project.alias, first.alias).status).toBe("done");
   } finally {
     db.close();

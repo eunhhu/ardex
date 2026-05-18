@@ -102,24 +102,6 @@ export function completeSession(db: Database, projectRef: string): Session {
     throw transitionRejected("Session has open asks.", { sessionId: session.alias, openAsks: openAsks.count });
   }
 
-  const finalEvidence = db
-    .query(
-      `
-        SELECT COUNT(*) as count FROM evidence
-        WHERE project_id = ?
-          AND status = 'accepted'
-          AND type IN ('spec', 'prototype', 'screenshot', 'generated_image', 'url', 'acceptance')
-          AND (session_id = ? OR target_type = 'session')
-      `,
-    )
-    .get(session.projectId, session.id) as { count: number };
-  if (session.mode !== "normal" && finalEvidence.count === 0) {
-    throw transitionRejected("Session done requires final SDD/VDD evidence.", {
-      sessionId: session.alias,
-      missing: ["spec|prototype|screenshot|url|acceptance"],
-    });
-  }
-
   const now = new Date().toISOString();
   db.query("UPDATE sessions SET status = 'done', ended_at = ?, last_seen_at = ? WHERE id = ?").run(now, now, session.id);
   return requireSession(db, session.id);
