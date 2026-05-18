@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { handleDashboardRequest } from "../src/dashboard.ts";
@@ -14,6 +14,7 @@ afterEach(async () => {
   for (const root of tempRoots.splice(0)) {
     await rm(root, { recursive: true, force: true });
   }
+  delete process.env.ARDEX_CODEX_HOME;
 });
 
 test("dashboard project cleanup endpoints rename and archive projects", async () => {
@@ -43,6 +44,21 @@ test("dashboard snapshots hide archived projects from project lists", async () =
   const archivedDashboard = await getJson(paths, `/api/projects/${first}/dashboard`);
   expect(archivedDashboard.data.project).toBeNull();
   expect(archivedDashboard.data.projects.map((project: any) => project.id)).toEqual([second]);
+});
+
+test("dashboard artifact previews allow Codex generated images", async () => {
+  const root = await tempRoot();
+  process.env.ARDEX_CODEX_HOME = join(root, "codex");
+  const generatedRoot = join(process.env.ARDEX_CODEX_HOME, "generated_images", "agent");
+  await mkdir(generatedRoot, { recursive: true });
+  const imagePath = join(generatedRoot, "scenario.png");
+  await writeFile(imagePath, onePixelPng());
+  const { paths, first } = await projectFixture();
+
+  const response = await handleDashboardRequest(new Request(`http://127.0.0.1:17373/api/projects/${first}/artifacts?path=${encodeURIComponent(imagePath)}`), paths);
+
+  expect(response?.status).toBe(200);
+  expect(response?.headers.get("content-type")).toBe("image/png");
 });
 
 async function projectFixture() {
@@ -86,4 +102,8 @@ async function tempRoot(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "ardex-dashboard-cleanup-test-"));
   tempRoots.push(root);
   return root;
+}
+
+function onePixelPng(): Buffer {
+  return Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=", "base64");
 }

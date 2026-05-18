@@ -3,7 +3,7 @@ import { enc, post } from "../api.ts";
 import type { OutputSummary } from "../types.ts";
 import { Pill, type Mutate } from "./shared.tsx";
 
-type OutputItemMode = "preview" | "list";
+type OutputItemMode = "preview" | "compact";
 
 export function OutputItem({ output, projectId, mutate, mode = "preview" }: { output: OutputSummary; projectId: string; mutate: Mutate; mode?: OutputItemMode }) {
   const [comment, setComment] = useState("");
@@ -12,12 +12,52 @@ export function OutputItem({ output, projectId, mutate, mode = "preview" }: { ou
   const level = output.status === "accepted" ? "good" : output.status === "rejected" ? "bad" : "warn";
   const review = (action: "accept" | "reject") => mutate(() => post(`/api/projects/${enc(projectId)}/evidence/${enc(output.id)}/${action}`, { comment }));
   const label = output.visualScenario ? `scenario ${output.status}` : output.format;
+  const createdAt = formatOutputTime(output.createdAt);
+
+  if (mode === "compact") {
+    return (
+      <details class={`item output-item output-compact ${output.visualScenario ? "visual-scenario" : ""}`}>
+        <summary class="output-compact-summary">
+          <span class="output-compact-title">{output.summary}</span>
+          <span class="output-compact-meta">
+            <span class={`pill ${level}`}>{label}</span>
+            {output.taskRef && <span class="pill">task {output.taskRef}</span>}
+            <span class="pill">{createdAt}</span>
+            <span class="output-expand">Expand</span>
+          </span>
+        </summary>
+        <OutputDetails output={output} source={previewSource} comment={comment} setComment={setComment} review={review} />
+      </details>
+    );
+  }
+
   return (
-    <article class={`item output-item output-${mode} ${output.visualScenario ? "visual-scenario" : ""}`}>
+    <article class={`item output-item output-preview ${output.visualScenario ? "visual-scenario" : ""}`}>
       <div class="item-head"><div class="item-title">{output.summary}</div><span class={`pill ${level}`}>{label}</span></div>
-      {mode === "preview" && <OutputPreview output={output} source={previewSource} />}
-      <div class="meta"><Pill value={output.id} /><Pill value={output.type} />{output.taskRef && <Pill value={`task ${output.taskRef}`} />}</div>
+      <OutputDetails output={output} source={previewSource} comment={comment} setComment={setComment} review={review} />
+    </article>
+  );
+}
+
+function OutputDetails({
+  output,
+  source,
+  comment,
+  setComment,
+  review,
+}: {
+  output: OutputSummary;
+  source: string;
+  comment: string;
+  setComment: (value: string) => void;
+  review: (action: "accept" | "reject") => Promise<void>;
+}) {
+  return (
+    <div class="output-details">
+      <OutputPreview output={output} source={source} />
+      <div class="meta"><Pill value={output.id} /><Pill value={output.type} />{output.taskRef && <Pill value={`task ${output.taskRef}`} />}<Pill value={formatOutputTime(output.createdAt)} /></div>
       <div class="subvalue">{output.url ? <a href={output.url} target="_blank" rel="noreferrer">{output.url}</a> : <span class="mono">{output.path}</span>}</div>
+      {output.visualScenario && output.status === "accepted" && <div class="visual-state accepted">Approved visual scenario</div>}
       {output.visualScenario && output.prompt && <details><summary>Scenario prompt</summary><pre class="mono">{output.prompt}</pre></details>}
       {output.reviewComment && <div class="subvalue">Review: {output.reviewComment}</div>}
       {output.needsApproval && (
@@ -27,8 +67,16 @@ export function OutputItem({ output, projectId, mutate, mode = "preview" }: { ou
           <button type="button" class="secondary" onClick={() => void review("reject")}>Reject</button>
         </form>
       )}
-    </article>
+    </div>
   );
+}
+
+function formatOutputTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 function OutputPreview({ output, source }: { output: OutputSummary; source: string }) {

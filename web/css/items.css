@@ -9,6 +9,33 @@
   border-bottom: 0;
 }
 
+.roadmap-list > .item:last-of-type {
+  border-bottom: 1px solid var(--line);
+}
+
+.completed-tasks {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.completed-tasks > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 42px;
+  padding: 0 14px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.completed-tasks[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+
 .item-head {
   display: flex;
   align-items: center;
@@ -116,14 +143,73 @@
   gap: 8px;
 }
 
-.output-list {
-  gap: 5px;
-  padding: 10px 14px;
+.output-details {
+  display: grid;
+  gap: 8px;
 }
 
-.output-list .subvalue,
-.output-list details {
+.output-compact {
+  gap: 0;
+  padding: 0;
+}
+
+.output-compact-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  align-items: center;
+  min-height: 42px;
+  padding: 8px 14px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.output-compact-summary::-webkit-details-marker {
   display: none;
+}
+
+.output-compact-title {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 700;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.output-compact-meta {
+  display: flex;
+  min-width: 0;
+  max-width: min(520px, 55vw);
+  gap: 6px;
+  justify-content: flex-end;
+  overflow: hidden;
+}
+
+.output-compact-meta .pill {
+  max-width: 150px;
+}
+
+.output-expand {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.output-compact[open] .output-expand {
+  color: var(--muted);
+  font-size: 0;
+}
+
+.output-compact[open] .output-expand::before {
+  content: "Collapse";
+  font-size: 12px;
+}
+
+.output-compact .output-details {
+  padding: 0 14px 12px;
 }
 
 .output-frame {
@@ -187,9 +273,34 @@
   background: #fbfdfc;
 }
 
+.visual-state {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--good);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: var(--good-weak);
+  color: var(--good);
+  font-size: 13px;
+  font-weight: 700;
+}
+
 details {
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 8px;
   background: #fff;
+}
+
+@media (max-width: 760px) {
+  .output-compact-summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .output-compact-meta {
+    max-width: 100%;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 2px;
+  }
 }

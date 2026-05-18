@@ -37,6 +37,7 @@ HTTP status mapping:
 - `POST /api/projects/:project/archive`
   Soft-archives the project. Archived projects are hidden from `GET /api/projects` and normal dashboard project search.
 - `GET /api/projects/:project/artifacts?path=:projectRelativeOrAbsoluteImagePath`
+  Serves image previews only from the project root or the configured Codex generated-images root.
 - `GET /events?project=:project`
 - `POST /api/projects/:project/session/start`
   Body: `{ "goal": "string", "mode": "sdd_vdd", "model": "string" }`

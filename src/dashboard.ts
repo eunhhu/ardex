@@ -3,7 +3,8 @@ import { ArdexError, internalError, usageError } from "./errors.ts";
 import { openDatabase } from "./db.ts";
 import type { ArdexPaths } from "./paths.ts";
 import { readFile, realpath } from "node:fs/promises";
-import { isAbsolute, resolve, sep } from "node:path";
+import { homedir } from "node:os";
+import { isAbsolute, join, resolve, sep } from "node:path";
 import { VERSION, type JsonEnvelope } from "./output.ts";
 import { requireProject } from "./repository.ts";
 import {
@@ -259,8 +260,9 @@ async function artifactResponse(paths: ArdexPaths, projectRef: string, rawPath: 
     const projectRoot = await realpath(project.path);
     const candidate = isAbsolute(rawPath) ? rawPath : resolve(projectRoot, rawPath);
     const resolved = await realpath(candidate);
-    if (resolved !== projectRoot && !resolved.startsWith(projectRoot + sep)) {
-      throw usageError("Artifact path must stay inside the project root.", { path: rawPath });
+    const generatedImagesRoot = await safeRealpath(join(process.env.ARDEX_CODEX_HOME ?? process.env.CODEX_HOME ?? join(homedir(), ".codex"), "generated_images"));
+    if (!isInsideAllowedArtifactRoot(resolved, [projectRoot, generatedImagesRoot])) {
+      throw usageError("Artifact path must stay inside the project root or Codex generated images root.", { path: rawPath });
     }
     if (!/\.(png|jpe?g|gif|webp|avif)$/i.test(resolved)) {
       throw usageError("Artifact preview supports image files only.", { path: rawPath });
@@ -275,6 +277,18 @@ async function artifactResponse(paths: ArdexPaths, projectRef: string, rawPath: 
   } finally {
     db.close();
   }
+}
+
+async function safeRealpath(path: string): Promise<string | null> {
+  try {
+    return await realpath(path);
+  } catch {
+    return null;
+  }
+}
+
+function isInsideAllowedArtifactRoot(path: string, roots: Array<string | null>): boolean {
+  return roots.some((root) => root !== null && (path === root || path.startsWith(root + sep)));
 }
 
 function imageContentType(path: string): string {

@@ -33,6 +33,9 @@ function App() {
   const latestScale = snapshot?.scale.latest ?? null;
   const blockingFindings = latestScale ? latestScale.findings.filter((finding) => finding.severity === "block" && !finding.waivedAt).length : 0;
   const review = snapshot?.project ? projectReview(snapshot, session, activeTask, latestScale, openAsks, blockingFindings) : null;
+  const tasks = snapshot?.tasks ?? [];
+  const completedTasks = tasks.filter((task) => task.status === "done");
+  const openTasks = tasks.filter((task) => task.status !== "done");
 
   useEffect(() => {
     void loadProjects();
@@ -191,8 +194,25 @@ function App() {
                 <button type="button" onClick={() => taskModal.current?.showModal()}>Add</button>
               </div>
             </div>
-            <div>
-              {!snapshot?.tasks.length ? <Empty text="No tasks." /> : snapshot.tasks.map((task) => <TaskItem key={task.id} task={task} projectId={projectId} mutate={mutate} />)}
+            <div class="roadmap-list">
+              {!tasks.length ? (
+                <Empty text="No tasks." />
+              ) : (
+                <>
+                  {openTasks.map((task) => <TaskItem key={task.id} task={task} projectId={projectId} mutate={mutate} />)}
+                  {completedTasks.length > 0 && (
+                    <details class="completed-tasks">
+                      <summary>
+                        <span>Completed</span>
+                        <span>{completedTasks.length}</span>
+                      </summary>
+                      <div>
+                        {completedTasks.map((task) => <TaskItem key={task.id} task={task} projectId={projectId} mutate={mutate} />)}
+                      </div>
+                    </details>
+                  )}
+                </>
+              )}
             </div>
           </section>
 

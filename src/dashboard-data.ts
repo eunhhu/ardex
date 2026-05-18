@@ -26,6 +26,7 @@ import {
   type Statement,
   type Task,
   VISUAL_SCENARIO_CONFIRM_KIND,
+  VISUAL_SCENARIO_PROMPT_KIND,
 } from "./repository.ts";
 
 export type DashboardSnapshot = {
@@ -336,6 +337,9 @@ function evidenceSummary(evidence: Evidence, taskById: Map<string, Task>, sessio
 }
 
 function outputSummary(evidence: Evidence, project: Project | null, taskById: Map<string, Task>): OutputSummary | null {
+  if (evidence.payload["kind"] === VISUAL_SCENARIO_PROMPT_KIND) {
+    return null;
+  }
   const visualScenario = evidence.payload["kind"] === VISUAL_SCENARIO_CONFIRM_KIND;
   if (evidence.status !== "accepted" && !visualScenario) {
     return null;
