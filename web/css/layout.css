@@ -119,6 +119,7 @@ main {
 
 @media (max-width: 960px) {
   .session-strip {
+    flex: 0 0 auto;
     width: 100%;
     max-width: none;
   }
@@ -126,18 +127,18 @@ main {
 
 @media (max-width: 560px) {
   .session-strip {
-    align-items: stretch;
-    flex-wrap: wrap;
+    align-items: center;
+    flex-wrap: nowrap;
     gap: 5px;
   }
 
   .strip-state,
   .strip-item {
-    flex: 1 1 0;
+    flex: 0 0 auto;
   }
 
   .strip-goal,
   .strip-task {
-    flex-basis: 100%;
+    flex: 0 0 min(260px, 80vw);
   }
 }

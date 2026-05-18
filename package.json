@@ -24,7 +24,9 @@
     "index.ts",
     "src",
     "web",
+    "web-dist",
     "docs",
+    "vite.config.ts",
     "LICENSE",
     "README.md"
   ],
@@ -32,14 +34,22 @@
     "access": "public"
   },
   "scripts": {
+    "build:web": "vite build",
     "check": "bunx tsc --noEmit",
+    "dev:web": "vite --host 127.0.0.1",
+    "prepack": "bun run build:web",
     "test": "bun test",
     "dev": "bun run index.ts"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@preact/preset-vite": "^2.10.5",
+    "@types/bun": "latest",
+    "vite": "^8.0.13"
   },
   "peerDependencies": {
     "typescript": "^5"
+  },
+  "dependencies": {
+    "preact": "^10.29.2"
   }
 }

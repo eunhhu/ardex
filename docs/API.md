@@ -73,6 +73,8 @@ The dashboard UI exposes user-facing controls for project switching, session sta
 
 The first viewport prioritizes project review: implementation level, progress, current focus, readiness, visible outputs, open asks, and scale risk. Evidence data remains available through the API and dashboard as a collapsed `Verification Log`; it is treated as agent receipts/debug context, not the main user-facing progress model.
 
+Codex hooks are turn-bound. Ardex `Stop` hooks can block turn completion and force the next action, but they cannot pause an already streaming assistant response mid-token. Streaming lock semantics require a Codex runtime-level interrupt API; Ardex treats this as outside the current hook contract.
+
 ## Security
 
 - Mutating dashboard endpoints accept local host only.

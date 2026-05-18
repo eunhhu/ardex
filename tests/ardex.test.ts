@@ -377,15 +377,20 @@ test("dashboard serves split static assets", async () => {
   const { paths, db } = await dbFixture();
   db.close();
 
-  const app = await handleDashboardRequest(new Request("http://127.0.0.1:17373/app.js"), paths);
-  const module = await handleDashboardRequest(new Request("http://127.0.0.1:17373/js/render.js"), paths);
-  const css = await handleDashboardRequest(new Request("http://127.0.0.1:17373/css/forms.css"), paths);
+  const html = await handleDashboardRequest(new Request("http://127.0.0.1:17373/"), paths);
+  expect(html?.status).toBe(200);
+  expect(html?.headers.get("content-type")).toContain("text/html");
+  const body = (await html?.text()) ?? "";
+  const appPath = body.match(/src="([^"]+\.js)"/)?.[1];
+  const cssPath = body.match(/href="([^"]+\.css)"/)?.[1];
+  expect(appPath).toBeDefined();
+  expect(cssPath).toBeDefined();
 
+  const app = await handleDashboardRequest(new Request(`http://127.0.0.1:17373${appPath}`), paths);
+  const css = await handleDashboardRequest(new Request(`http://127.0.0.1:17373${cssPath}`), paths);
   expect(app?.status).toBe(200);
   expect(app?.headers.get("content-type")).toContain("text/javascript");
-  expect(await app?.text()).toContain("from \"./js/render.js\"");
-  expect(module?.status).toBe(200);
-  expect(await module?.text()).toContain("renderProjectButton");
+  expect(((await app?.text()) ?? "").length).toBeGreaterThan(100);
   expect(css?.status).toBe(200);
   expect(css?.headers.get("content-type")).toContain("text/css");
 });

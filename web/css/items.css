@@ -26,20 +26,41 @@
 .meta,
 .actions {
   display: flex;
-  flex-wrap: wrap;
   gap: 6px;
+}
+
+.actions {
+  flex-wrap: wrap;
+}
+
+.meta {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+  white-space: nowrap;
 }
 
 .pill {
   display: inline-flex;
   align-items: center;
+  flex: 0 0 auto;
+  max-width: 100%;
   min-height: 22px;
+  overflow: hidden;
   border-radius: 999px;
   padding: 0 8px;
   background: var(--surface-strong);
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta .pill {
+  max-width: min(320px, 78vw);
 }
 
 .pill.good {
