@@ -1,6 +1,6 @@
 {
   "name": "ardex",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Local live-session control plane for Codex workflows",
   "module": "index.ts",
   "type": "module",
