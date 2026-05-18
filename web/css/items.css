@@ -264,6 +264,8 @@ details[open] > summary .fold-caret {
 .visible-output-previews,
 .folded-output-list {
   display: grid;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .visible-output-previews {
@@ -281,16 +283,21 @@ details[open] > summary .fold-caret {
 
 .output-compact {
   gap: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
   padding: 0;
 }
 
 .output-compact-summary {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px 12px;
-  align-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
   min-height: 42px;
-  padding: 8px 14px;
+  padding: 10px 14px;
   cursor: pointer;
   list-style: none;
 }
@@ -301,25 +308,35 @@ details[open] > summary .fold-caret {
 
 .output-compact-title {
   min-width: 0;
+  max-width: 100%;
   overflow: visible;
   overflow-wrap: anywhere;
   font-weight: 700;
   line-height: 1.25;
   white-space: normal;
+  word-break: normal;
 }
 
 .output-compact-meta {
   display: flex;
+  box-sizing: border-box;
+  width: 100%;
   min-width: 0;
-  max-width: min(520px, 55vw);
+  max-width: 100%;
   gap: 6px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  overflow: visible;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+  white-space: nowrap;
+  -webkit-overflow-scrolling: touch;
 }
 
 .output-compact-meta .pill {
-  max-width: min(150px, 100%);
+  flex: 0 0 auto;
+  max-width: min(180px, 60vw);
 }
 
 .output-expand {
@@ -457,14 +474,7 @@ details {
 }
 
 @media (max-width: 760px) {
-  .output-compact-summary {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .output-compact-meta {
-    max-width: 100%;
-    flex-wrap: wrap;
-    justify-content: flex-start;
-    overflow: visible;
+    max-width: calc(100vw - 56px);
   }
 }
