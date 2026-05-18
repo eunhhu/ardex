@@ -5,12 +5,24 @@
   "module": "index.ts",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eunhhu/ardex.git"
+  },
+  "bugs": {
+    "url": "https://github.com/eunhhu/ardex/issues"
+  },
+  "homepage": "https://github.com/eunhhu/ardex#readme",
   "keywords": [
     "codex",
+    "codex-cli",
     "agent",
+    "agent-workflow",
+    "local-dashboard",
     "workflow",
     "sdd",
     "vdd",
+    "visible-outputs",
     "local-first"
   ],
   "engines": {
@@ -24,7 +36,9 @@
     "index.ts",
     "src",
     "web",
+    "web-dist",
     "docs",
+    "vite.config.ts",
     "LICENSE",
     "README.md"
   ],
@@ -32,14 +46,23 @@
     "access": "public"
   },
   "scripts": {
+    "build": "bun run build:web",
+    "build:web": "vite build",
     "check": "bunx tsc --noEmit",
+    "dev:web": "vite --host 127.0.0.1",
+    "prepack": "bun run build:web",
     "test": "bun test",
     "dev": "bun run index.ts"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@preact/preset-vite": "^2.10.5",
+    "@types/bun": "latest",
+    "vite": "^8.0.13"
   },
   "peerDependencies": {
     "typescript": "^5"
+  },
+  "dependencies": {
+    "preact": "^10.29.2"
   }
 }

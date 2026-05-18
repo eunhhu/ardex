@@ -3,11 +3,13 @@ import { ArdexError, internalError, usageError } from "./errors.ts";
 import { openDatabase } from "./db.ts";
 import type { ArdexPaths } from "./paths.ts";
 import { readFile, realpath } from "node:fs/promises";
-import { isAbsolute, resolve, sep } from "node:path";
+import { homedir } from "node:os";
+import { isAbsolute, join, resolve, sep } from "node:path";
 import { VERSION, type JsonEnvelope } from "./output.ts";
 import { requireProject } from "./repository.ts";
 import {
   addTaskForDashboard,
+  archiveProjectForDashboard,
   claimTaskForDashboard,
   completeSessionForDashboard,
   completeTaskForDashboard,
@@ -15,6 +17,7 @@ import {
   pauseTaskForDashboard,
   resumeTaskForDashboard,
   runScaleCheckForDashboard,
+  renameProjectForDashboard,
   setSessionStatusForDashboard,
   setTaskOwnerForDashboard,
   setTaskPriorityForDashboard,
@@ -57,6 +60,15 @@ export async function handleDashboardRequest(request: Request, paths: ArdexPaths
 
     if (request.method === "GET" && segments[1] === "projects" && segments.length === 2) {
       return dataResponse({ projects: readProjects(paths) });
+    }
+    if (request.method === "POST" && segments[1] === "projects" && segments[3] === "rename") {
+      const body = await readJsonBody(request);
+      return dataResponse({
+        project: renameProjectForDashboard(paths, requiredSegment(segments, 2, "project"), requiredString(body, "name")),
+      });
+    }
+    if (request.method === "POST" && segments[1] === "projects" && segments[3] === "archive") {
+      return dataResponse({ project: archiveProjectForDashboard(paths, requiredSegment(segments, 2, "project")) });
     }
     if (request.method === "GET" && segments[1] === "projects" && segments[3] === "dashboard") {
       return dataResponse(await buildDashboardSnapshot(paths, requiredSegment(segments, 2, "project")));
@@ -248,8 +260,9 @@ async function artifactResponse(paths: ArdexPaths, projectRef: string, rawPath: 
     const projectRoot = await realpath(project.path);
     const candidate = isAbsolute(rawPath) ? rawPath : resolve(projectRoot, rawPath);
     const resolved = await realpath(candidate);
-    if (resolved !== projectRoot && !resolved.startsWith(projectRoot + sep)) {
-      throw usageError("Artifact path must stay inside the project root.", { path: rawPath });
+    const generatedImagesRoot = await safeRealpath(join(process.env.ARDEX_CODEX_HOME ?? process.env.CODEX_HOME ?? join(homedir(), ".codex"), "generated_images"));
+    if (!isInsideAllowedArtifactRoot(resolved, [projectRoot, generatedImagesRoot])) {
+      throw usageError("Artifact path must stay inside the project root or Codex generated images root.", { path: rawPath });
     }
     if (!/\.(png|jpe?g|gif|webp|avif)$/i.test(resolved)) {
       throw usageError("Artifact preview supports image files only.", { path: rawPath });
@@ -264,6 +277,18 @@ async function artifactResponse(paths: ArdexPaths, projectRef: string, rawPath: 
   } finally {
     db.close();
   }
+}
+
+async function safeRealpath(path: string): Promise<string | null> {
+  try {
+    return await realpath(path);
+  } catch {
+    return null;
+  }
+}
+
+function isInsideAllowedArtifactRoot(path: string, roots: Array<string | null>): boolean {
+  return roots.some((root) => root !== null && (path === root || path.startsWith(root + sep)));
 }
 
 function imageContentType(path: string): string {

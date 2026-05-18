@@ -188,7 +188,11 @@ function evidencePayload(type: string, options: Record<string, string>): Record<
   if (options.path !== undefined) payload["path"] = options.path;
   if (options.url !== undefined) payload["url"] = options.url;
   if (options.kind !== undefined) payload["kind"] = options.kind;
+  if (options.format !== undefined) payload["format"] = options.format;
   if (options.prompt !== undefined) payload["prompt"] = options.prompt;
+  if (options.markdown !== undefined) payload["markdown"] = options.markdown;
+  if (options.html !== undefined) payload["html"] = options.html;
+  if (options.text !== undefined) payload["text"] = options.text;
   if (options.tool !== undefined) payload["tool"] = options.tool;
   if (options.comment !== undefined) payload["comment"] = options.comment;
   if (options.pass !== undefined) payload["pass"] = options.pass === "true" || options.pass === "1" || options.pass === "yes";

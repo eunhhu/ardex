@@ -7,6 +7,7 @@ import { initializeStorage } from "../src/daemon.ts";
 import { openDatabase } from "../src/db.ts";
 import { initializeArdex } from "../src/init.ts";
 import { checkCommand, statementCommand } from "../src/cli-core-commands.ts";
+import { evidenceCommand } from "../src/cli-workflow-commands.ts";
 import { getArdexPaths } from "../src/paths.ts";
 import { migrateCodexProjects } from "../src/codex-migration.ts";
 import {
@@ -207,6 +208,7 @@ test("statement exposes subagent delegation plan", async () => {
     expect(statement.subagents.pending[0]?.id).toBe(task.alias);
     expect(statement.subagents.pending[0]?.role).toBe("worker-1");
     expect(statement.subagents.instruction).toContain("Spawn separate Codex subagents");
+    expect(statement.nextExpectedAction).toBe(`spawn_subagent:${task.alias}`);
   } finally {
     db.close();
   }
@@ -286,6 +288,36 @@ test("task delete compacts priorities and leaves delete event", async () => {
     const tasks = listTasks(db, project.alias);
     expect(tasks.map((task) => [task.alias, task.priority])).toEqual([[second.alias, 1]]);
     expect(listTaskEvents(db, project.alias).some((item) => item.taskAlias === first.alias && item.type === "deleted")).toBe(true);
+  } finally {
+    db.close();
+  }
+});
+
+test("task delete compacts a long priority range without unique collisions", async () => {
+  const { db, project } = await dbFixture();
+  try {
+    const task1 = addTask(db, project.alias, { title: "task 1" });
+    const task2 = addTask(db, project.alias, { title: "task 2" });
+    const task3 = addTask(db, project.alias, { title: "task 3" });
+    const task4 = addTask(db, project.alias, { title: "task 4" });
+    const task5 = addTask(db, project.alias, { title: "task 5" });
+    const task6 = addTask(db, project.alias, { title: "task 6" });
+    const task7 = addTask(db, project.alias, { title: "task 7" });
+    const task8 = addTask(db, project.alias, { title: "task 8" });
+    deleteTask(db, project.alias, task4.alias);
+    const remaining = listTasks(db, project.alias);
+
+    expect(remaining.map((task) => task.priority)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(new Set(remaining.map((task) => task.priority)).size).toBe(7);
+    expect(remaining.map((task) => task.alias)).toEqual([
+      task1.alias,
+      task2.alias,
+      task3.alias,
+      task5.alias,
+      task6.alias,
+      task7.alias,
+      task8.alias,
+    ]);
   } finally {
     db.close();
   }
@@ -377,15 +409,20 @@ test("dashboard serves split static assets", async () => {
   const { paths, db } = await dbFixture();
   db.close();
 
-  const app = await handleDashboardRequest(new Request("http://127.0.0.1:17373/app.js"), paths);
-  const module = await handleDashboardRequest(new Request("http://127.0.0.1:17373/js/render.js"), paths);
-  const css = await handleDashboardRequest(new Request("http://127.0.0.1:17373/css/forms.css"), paths);
+  const html = await handleDashboardRequest(new Request("http://127.0.0.1:17373/"), paths);
+  expect(html?.status).toBe(200);
+  expect(html?.headers.get("content-type")).toContain("text/html");
+  const body = (await html?.text()) ?? "";
+  const appPath = body.match(/src="([^"]+\.js)"/)?.[1];
+  const cssPath = body.match(/href="([^"]+\.css)"/)?.[1];
+  expect(appPath).toBeDefined();
+  expect(cssPath).toBeDefined();
 
+  const app = await handleDashboardRequest(new Request(`http://127.0.0.1:17373${appPath}`), paths);
+  const css = await handleDashboardRequest(new Request(`http://127.0.0.1:17373${cssPath}`), paths);
   expect(app?.status).toBe(200);
   expect(app?.headers.get("content-type")).toContain("text/javascript");
-  expect(await app?.text()).toContain("from \"./js/render.js\"");
-  expect(module?.status).toBe(200);
-  expect(await module?.text()).toContain("renderProjectButton");
+  expect(((await app?.text()) ?? "").length).toBeGreaterThan(100);
   expect(css?.status).toBe(200);
   expect(css?.headers.get("content-type")).toContain("text/css");
 });
@@ -468,6 +505,63 @@ test("dashboard pause resume owner and generated image outputs update snapshot",
   expect(dashboard.data.outputs.some((output: any) => output.type === "generated_image" && output.renderableImage === true)).toBe(true);
 });
 
+test("dashboard output summaries expose markdown and html artifact metadata", async () => {
+  const { paths, db, project } = await dbFixture();
+  startSession(db, project.alias, { goal: "rich outputs" });
+  const task = addTask(db, project.alias, { title: "document visible outputs" });
+  addEvidence(db, project.alias, {
+    type: "artifact",
+    targetType: "task",
+    targetRef: task.alias,
+    summary: "markdown summary",
+    payload: { markdown: "## Result\n\nDone.", format: "markdown" },
+  });
+  addEvidence(db, project.alias, {
+    type: "prototype",
+    targetType: "task",
+    targetRef: task.alias,
+    summary: "html summary",
+    payload: { html: "<section>Done.</section>", format: "html" },
+  });
+  db.close();
+
+  const dashboard = await getJson(paths, `/api/projects/${project.alias}/dashboard`);
+  const markdown = dashboard.data.outputs.find((output: any) => output.summary === "markdown summary");
+  const html = dashboard.data.outputs.find((output: any) => output.summary === "html summary");
+
+  expect(markdown.kind).toBe("markdown");
+  expect(markdown.format).toBe("markdown");
+  expect(markdown.mimeType).toBe("text/markdown");
+  expect(markdown.markdown).toContain("Done.");
+  expect(markdown.renderable).toBe(true);
+  expect(html.kind).toBe("html");
+  expect(html.format).toBe("html");
+  expect(html.mimeType).toBe("text/html");
+  expect(html.html).toContain("<section>");
+});
+
+test("cli evidence add accepts markdown html and text payload fields", async () => {
+  const { paths, db, project } = await dbFixture();
+  process.env.ARDEX_HOME = paths.home;
+  startSession(db, project.alias, { goal: "cli rich evidence" });
+  const task = addTask(db, project.alias, { title: "cli output" });
+  db.close();
+
+  await evidenceCommand({
+    args: ["evidence", "add", "artifact", "--task", task.alias, "--summary", "cli artifact", "--markdown", "# Notes", "--html", "<p>Notes</p>", "--text", "Notes"],
+    commandName: "evidence",
+    json: true,
+    noStart: false,
+    projectId: project.alias,
+  });
+
+  const dashboard = await getJson(paths, `/api/projects/${project.alias}/dashboard`);
+  const output = dashboard.data.outputs.find((item: any) => item.summary === "cli artifact");
+  expect(output.markdown).toBe("# Notes");
+  expect(output.html).toBe("<p>Notes</p>");
+  expect(output.text).toBe("Notes");
+});
+
 test("dashboard shows visual scenario candidates and records review comments", async () => {
   const { paths, db, project } = await dbFixture();
   await writeFile(join(project.path, "scenario.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=", "base64"));
@@ -497,6 +591,63 @@ test("dashboard shows visual scenario candidates and records review comments", a
   const accepted = after.data.outputs.find((output: any) => output.id === evidence.alias);
   expect(accepted.status).toBe("accepted");
   expect(accepted.reviewComment).toBe("approved direction");
+});
+
+test("visual scenario gate accepts approved non-image renderable artifact", async () => {
+  const { db, project } = await dbFixture();
+  try {
+    startSession(db, project.alias, { goal: "html scenario" });
+    storeScaleReport(db, project.alias, await scanScale({ projectPath: project.path, paths: [] }));
+    const task = addTask(db, project.alias, { title: "dashboard html scenario", qualityGate: "visual" });
+    const prompt = ensureVisualScenarioPrompt(db, project, task);
+    const candidate = addEvidence(db, project.alias, {
+      type: "prototype",
+      targetType: "task",
+      targetRef: task.alias,
+      status: "candidate",
+      summary: "visual scenario html",
+      payload: { kind: "visual_scenario_confirm", html: "<main>Expected state</main>", format: "html", prompt: prompt.payload.prompt },
+    });
+
+    expect(() => claimTask(db, project.alias, task.alias)).toThrow("Visual scenario approval is required");
+    setEvidenceStatus(db, project.alias, candidate.alias, "accepted", { comment: "html scenario approved" });
+    expect(claimTask(db, project.alias, task.alias).status).toBe("active");
+    const checklist = buildProductionChecklist(db, project.alias, task.alias);
+    expect(checklist.items.find((item) => item.id === "visual_scenario_confirm")?.passed).toBe(true);
+  } finally {
+    db.close();
+  }
+});
+
+test("split child can inherit approved parent visual scenario", async () => {
+  const { db, project } = await dbFixture();
+  try {
+    startSession(db, project.alias, { goal: "child visual inheritance" });
+    storeScaleReport(db, project.alias, await scanScale({ projectPath: project.path, paths: [] }));
+    const parent = addTask(db, project.alias, { title: "dashboard cleanup", qualityGate: "visual" });
+    const prompt = ensureVisualScenarioPrompt(db, project, parent);
+    const approved = addEvidence(db, project.alias, {
+      type: "generated_image",
+      targetType: "task",
+      targetRef: parent.alias,
+      status: "accepted",
+      summary: "approved parent scenario",
+      payload: { kind: "visual_scenario_confirm", path: "scenario.png", prompt: prompt.payload.prompt },
+    });
+    const child = addTask(db, project.alias, {
+      title: "dashboard project cleanup controls",
+      content: `Generated from scale report sc_001.\nParent task: ${parent.alias}.\nTarget slice 1/2.`,
+      qualityGate: "test",
+    });
+    setTaskField(db, project.alias, child.alias, "content", "Edited child implementation scope.");
+
+    expect(claimTask(db, project.alias, child.alias).status).toBe("active");
+    const item = buildProductionChecklist(db, project.alias, child.alias).items.find((entry) => entry.id === "visual_scenario_confirm");
+    expect(item?.passed).toBe(true);
+    expect(item?.detail).toBe(`inherited=${approved.alias}`);
+  } finally {
+    db.close();
+  }
 });
 
 test("codex project migration registers existing paths from metadata", async () => {

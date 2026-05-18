@@ -26,6 +26,7 @@ import {
   type Statement,
   type Task,
   VISUAL_SCENARIO_CONFIRM_KIND,
+  VISUAL_SCENARIO_PROMPT_KIND,
 } from "./repository.ts";
 
 export type DashboardSnapshot = {
@@ -101,12 +102,19 @@ type EvidenceSummary = {
 type OutputSummary = {
   id: string;
   type: string;
+  kind: OutputKind;
+  format: OutputFormat;
+  mimeType: string | null;
   status: string;
   taskRef: string | null;
   summary: string;
   path: string | null;
   url: string | null;
+  markdown: string | null;
+  html: string | null;
+  text: string | null;
   previewUrl: string | null;
+  renderable: boolean;
   renderableImage: boolean;
   visualScenario: boolean;
   prompt: string | null;
@@ -114,6 +122,10 @@ type OutputSummary = {
   needsApproval: boolean;
   createdAt: string;
 };
+
+type OutputFormat = "image" | "markdown" | "html" | "text" | "link" | "file";
+
+type OutputKind = "image" | "markdown" | "html" | "link" | "file" | "artifact";
 
 type AskSummary = {
   id: string;
@@ -325,6 +337,9 @@ function evidenceSummary(evidence: Evidence, taskById: Map<string, Task>, sessio
 }
 
 function outputSummary(evidence: Evidence, project: Project | null, taskById: Map<string, Task>): OutputSummary | null {
+  if (evidence.payload["kind"] === VISUAL_SCENARIO_PROMPT_KIND) {
+    return null;
+  }
   const visualScenario = evidence.payload["kind"] === VISUAL_SCENARIO_CONFIRM_KIND;
   if (evidence.status !== "accepted" && !visualScenario) {
     return null;
@@ -332,33 +347,84 @@ function outputSummary(evidence: Evidence, project: Project | null, taskById: Ma
   if (evidence.status === "rejected" && !visualScenario) {
     return null;
   }
-  if (!["screenshot", "generated_image", "prototype", "url", "browser_diff"].includes(evidence.type)) {
+  if (!["screenshot", "generated_image", "prototype", "url", "browser_diff", "artifact"].includes(evidence.type)) {
     return null;
   }
   const path = typeof evidence.payload["path"] === "string" ? evidence.payload["path"] : null;
   const url = typeof evidence.payload["url"] === "string" ? evidence.payload["url"] : null;
-  if (path === null && url === null) {
+  const markdown = typeof evidence.payload["markdown"] === "string" ? evidence.payload["markdown"] : null;
+  const html = typeof evidence.payload["html"] === "string" ? evidence.payload["html"] : null;
+  const text = typeof evidence.payload["text"] === "string" ? evidence.payload["text"] : null;
+  if (path === null && url === null && markdown === null && html === null && text === null) {
     return null;
   }
   const source = url ?? path ?? "";
+  const format = outputFormat(evidence, source, { markdown, html, text });
+  const kind = outputKind(evidence, format, path, url);
+  const mimeType = outputMimeType(format, source);
   const previewUrl = renderableArtifactUrl(project, path);
   const renderableRemote = /^https?:\/\//.test(source) && /\.(png|jpe?g|gif|webp|avif)(\?|$)/i.test(source);
   return {
     id: evidence.alias,
     type: evidence.type,
+    kind,
+    format,
+    mimeType,
     status: evidence.status,
     taskRef: evidence.targetType === "task" && evidence.targetId !== null ? taskById.get(evidence.targetId)?.alias ?? evidence.targetId : null,
     summary: evidence.summary,
     path,
     url,
+    markdown,
+    html,
+    text,
     previewUrl,
-    renderableImage: previewUrl !== null || renderableRemote,
+    renderable: format !== "file",
+    renderableImage: format === "image" && (previewUrl !== null || renderableRemote),
     visualScenario,
     prompt: typeof evidence.payload["prompt"] === "string" ? evidence.payload["prompt"] : null,
     reviewComment: typeof evidence.payload["reviewComment"] === "string" ? evidence.payload["reviewComment"] : null,
     needsApproval: visualScenario && evidence.status === "candidate",
     createdAt: evidence.createdAt,
   };
+}
+
+function outputFormat(evidence: Evidence, source: string, inline: { markdown: string | null; html: string | null; text: string | null }): OutputFormat {
+  const declared = typeof evidence.payload["format"] === "string" ? evidence.payload["format"].toLowerCase() : null;
+  if (declared === "image" || declared === "markdown" || declared === "html" || declared === "text" || declared === "link" || declared === "file") {
+    return declared;
+  }
+  if (inline.markdown !== null) return "markdown";
+  if (inline.html !== null) return "html";
+  if (inline.text !== null) return "text";
+  if (evidence.type === "generated_image" || evidence.type === "screenshot") return "image";
+  if (evidence.type === "browser_diff") return "html";
+  if (/\.(png|jpe?g|gif|webp|avif)(\?|$)/i.test(source)) return "image";
+  if (/\.(md|markdown)(\?|$)/i.test(source)) return "markdown";
+  if (/\.(html?|xhtml)(\?|$)/i.test(source)) return "html";
+  if (/\.(txt|log)(\?|$)/i.test(source)) return "text";
+  if (/^https?:\/\//i.test(source)) return "link";
+  return "file";
+}
+
+function outputKind(evidence: Evidence, format: OutputFormat, path: string | null, url: string | null): OutputKind {
+  if (format === "image" || format === "markdown" || format === "html") return format;
+  if (url !== null && path === null) return "link";
+  if (evidence.type === "prototype" || evidence.type === "artifact") return "artifact";
+  return "file";
+}
+
+function outputMimeType(format: OutputFormat, source: string): string | null {
+  if (format === "markdown") return "text/markdown";
+  if (format === "html") return "text/html";
+  if (format === "text") return "text/plain";
+  if (format === "link" || format === "file") return null;
+  if (/\.png(\?|$)/i.test(source)) return "image/png";
+  if (/\.jpe?g(\?|$)/i.test(source)) return "image/jpeg";
+  if (/\.gif(\?|$)/i.test(source)) return "image/gif";
+  if (/\.webp(\?|$)/i.test(source)) return "image/webp";
+  if (/\.avif(\?|$)/i.test(source)) return "image/avif";
+  return "image/*";
 }
 
 function renderableArtifactUrl(project: Project | null, path: string | null): string | null {

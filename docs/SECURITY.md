@@ -8,6 +8,7 @@ Ardex is local-first. Default daemon binding is `127.0.0.1`.
 - Dashboard mutations with an `Origin` header must match daemon origin.
 - JSON body size limit is 64 KB.
 - Evidence summaries and payload strings redact common API keys, tokens, passwords, and private keys before storage.
+- Artifact image previews are limited to the project root and the configured Codex `generated_images` directory.
 - `ardex init` writes a backup at `$HOME/.codex/hooks.json.ardex-backup` before merging hook config.
 - Hook scripts use `ARDEX_BIN` only as a command path, not a shell string.
 

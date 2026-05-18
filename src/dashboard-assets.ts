@@ -1,37 +1,40 @@
 import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const assetDir = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
-const dashboardAssets = new Map([
-  ["index.html", "text/html; charset=utf-8"],
-  ["styles.css", "text/css; charset=utf-8"],
-  ["css/base.css", "text/css; charset=utf-8"],
-  ["css/topbar.css", "text/css; charset=utf-8"],
-  ["css/command-menu.css", "text/css; charset=utf-8"],
-  ["css/layout.css", "text/css; charset=utf-8"],
-  ["css/items.css", "text/css; charset=utf-8"],
-  ["css/forms.css", "text/css; charset=utf-8"],
-  ["css/responsive.css", "text/css; charset=utf-8"],
-  ["app.js", "text/javascript; charset=utf-8"],
-  ["js/api.js", "text/javascript; charset=utf-8"],
-  ["js/dom.js", "text/javascript; charset=utf-8"],
-  ["js/format.js", "text/javascript; charset=utf-8"],
-  ["js/render.js", "text/javascript; charset=utf-8"],
-  ["js/state.js", "text/javascript; charset=utf-8"],
-]);
+const assetDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "web-dist");
 
 export async function dashboardAssetResponse(pathname: string): Promise<Response | null> {
-  const assetPath = pathname === "/" ? "index.html" : pathname.slice(1);
-  const contentType = dashboardAssets.get(assetPath);
-  if (contentType === undefined) {
+  let assetPath: string;
+  try {
+    assetPath = pathname === "/" ? "index.html" : decodeURIComponent(pathname.slice(1));
+  } catch {
     return null;
   }
-  const body = await readFile(join(assetDir, assetPath), "utf8");
-  return new Response(body, {
-    headers: {
-      "cache-control": "no-store",
-      "content-type": contentType,
-    },
-  });
+  const filePath = resolve(assetDir, assetPath);
+  if (filePath !== assetDir && !filePath.startsWith(assetDir + sep)) {
+    return null;
+  }
+  try {
+    const body = await readFile(filePath);
+    return new Response(body, {
+      headers: {
+        "cache-control": "no-store",
+        "content-type": contentTypeFor(filePath),
+      },
+    });
+  } catch {
+    return null;
+  }
+}
+
+function contentTypeFor(path: string): string {
+  if (/\.html$/i.test(path)) return "text/html; charset=utf-8";
+  if (/\.css$/i.test(path)) return "text/css; charset=utf-8";
+  if (/\.[cm]?js$/i.test(path)) return "text/javascript; charset=utf-8";
+  if (/\.svg$/i.test(path)) return "image/svg+xml";
+  if (/\.png$/i.test(path)) return "image/png";
+  if (/\.webp$/i.test(path)) return "image/webp";
+  if (/\.ico$/i.test(path)) return "image/x-icon";
+  return "application/octet-stream";
 }

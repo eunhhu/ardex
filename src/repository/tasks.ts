@@ -123,13 +123,14 @@ export function setTaskField(db: Database, projectRef: string, taskRef: string, 
   if (spec.column === "owner") {
     assertOwner(value);
   }
+  const parsedValue = spec.column === "content" ? preserveParentTaskMarker(task.content, String(spec.parse(value))) : spec.parse(value);
   db.query(
     `
       UPDATE tasks
       SET ${spec.column} = ?, updated_at = ?, completed_at = COALESCE(?, completed_at)
       WHERE id = ?
     `,
-  ).run(spec.parse(value), now, completedAt, task.id);
+  ).run(parsedValue, now, completedAt, task.id);
 
   const updated = requireTask(db, task.id);
   if (spec.column === "progress" && updated.sessionId !== null) {
@@ -142,7 +143,7 @@ export function setTaskField(db: Database, projectRef: string, taskRef: string, 
     taskAlias: updated.alias,
     type: spec.column === "progress" ? "progress" : spec.column === "owner" ? "owner_changed" : "edited",
     summary: `Task ${updated.alias} ${field} updated`,
-    payload: { field, value: spec.parse(value) },
+    payload: { field, value: parsedValue },
     createdAt: now,
   });
   return updated;
@@ -348,7 +349,7 @@ export function deleteTask(db: Database, projectRef: string, taskRef: string): T
     });
     db.query("UPDATE sessions SET current_task_id = NULL, last_seen_at = ? WHERE current_task_id = ?").run(now, task.id);
     db.query("DELETE FROM tasks WHERE id = ?").run(task.id);
-    db.query("UPDATE tasks SET priority = priority - 1, updated_at = ? WHERE project_id = ? AND priority > ?").run(now, project.id, task.priority);
+    compactPrioritiesAfterDelete(db, project.id, task.priority, now);
     syncSessionWorkflow(db, project.alias, "task_deleted");
     db.exec("COMMIT;");
     return event;
@@ -482,6 +483,12 @@ function shiftPrioritiesForInsert(db: Database, projectId: string, priority: num
   db.query("UPDATE tasks SET priority = priority - 999999 WHERE project_id = ? AND priority >= 1000000").run(projectId);
 }
 
+function compactPrioritiesAfterDelete(db: Database, projectId: string, deletedPriority: number, updatedAt: string): void {
+  const offset = getMaxPriority(db, projectId) + 1_000_000;
+  db.query("UPDATE tasks SET priority = priority + ?, updated_at = ? WHERE project_id = ? AND priority > ?").run(offset, updatedAt, projectId, deletedPriority);
+  db.query("UPDATE tasks SET priority = priority - ? - 1, updated_at = ? WHERE project_id = ? AND priority > ?").run(offset, updatedAt, projectId, offset);
+}
+
 function getMaxPriority(db: Database, projectId: string): number {
   const row = db.query("SELECT MAX(priority) as maxPriority FROM tasks WHERE project_id = ?").get(projectId) as { maxPriority: number | null };
   return row.maxPriority ?? 0;
@@ -498,6 +505,17 @@ function parseRatio(input: string): number {
     throw usageError("Value must be a number from 0 to 1.", { value: input });
   }
   return value;
+}
+
+function preserveParentTaskMarker(previous: string, next: string): string {
+  if (/Parent task:\s*[A-Za-z0-9_-]+/.test(next)) {
+    return next;
+  }
+  const marker = previous.match(/Parent task:\s*[A-Za-z0-9_-]+\.?/)?.[0];
+  if (marker === undefined) {
+    return next;
+  }
+  return `${next.trimEnd()}\n\n${marker}`;
 }
 
 function runtimeSecondsAt(task: Task, at = new Date().toISOString()): number {
