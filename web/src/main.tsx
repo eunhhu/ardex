@@ -59,19 +59,24 @@ function App() {
     };
   }, [projectId]);
 
-  async function loadProjects() {
+  async function loadProjects(preferredProjectId = projectId) {
     try {
       const data = await api<{ projects: ProjectSummary[] }>("/api/projects");
       const visible = data.projects.filter((project) => project.archivedAt == null);
       setProjects(visible);
-      const nextProjectId = projectId && visible.some((project) => project.id === projectId) ? projectId : visible[0]?.id ?? "";
+      const nextProjectId = preferredProjectId && visible.some((project) => project.id === preferredProjectId) ? preferredProjectId : visible[0]?.id ?? "";
       if (nextProjectId !== projectId) {
         selectProject(nextProjectId);
       } else if (nextProjectId) {
         await refresh(nextProjectId);
+      } else {
+        selectProject("");
+        setSnapshot(null);
       }
+      return visible;
     } catch (err) {
       showError(err);
+      return [];
     }
   }
 
@@ -88,6 +93,7 @@ function App() {
   function selectProject(id: string) {
     setProjectId(id);
     if (id) localStorage.setItem("ardex.projectId", id);
+    else localStorage.removeItem("ardex.projectId");
     setProjectMenuOpen(false);
     setProjectSearch("");
   }
@@ -100,6 +106,29 @@ function App() {
     try {
       await callback();
       await refresh();
+      setError(null);
+    } catch (err) {
+      showError(err);
+    }
+  }
+
+  async function renameProject(name: string) {
+    if (!projectId) return;
+    try {
+      await post(`/api/projects/${enc(projectId)}/rename`, { name });
+      await loadProjects(projectId);
+      setError(null);
+    } catch (err) {
+      showError(err);
+    }
+  }
+
+  async function archiveProject() {
+    if (!projectId) return;
+    try {
+      const archivedId = projectId;
+      await post(`/api/projects/${enc(archivedId)}/archive`, {});
+      await loadProjects("");
       setError(null);
     } catch (err) {
       showError(err);
@@ -130,7 +159,16 @@ function App() {
       </header>
 
       {projectMenuOpen && (
-        <ProjectMenu projects={projects} search={projectSearch} onSearch={setProjectSearch} onSelect={selectProject} onClose={() => setProjectMenuOpen(false)} />
+        <ProjectMenu
+          projects={projects}
+          activeProject={activeProject}
+          search={projectSearch}
+          onSearch={setProjectSearch}
+          onSelect={selectProject}
+          onRename={renameProject}
+          onArchive={archiveProject}
+          onClose={() => setProjectMenuOpen(false)}
+        />
       )}
 
       <main>

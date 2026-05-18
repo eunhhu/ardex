@@ -2,15 +2,76 @@
 
 Local control plane for Codex work.
 
-## Install
+Ardex installs a local CLI, Codex skill, hooks, SQLite state, and a dashboard served on `127.0.0.1`. It is currently Bun-based: npm can install and publish the package, but the `ardex` executable uses `#!/usr/bin/env bun`, so Bun must be available on machines that run it.
 
-Ardex is Bun-based.
+## Quick Start
+
+Install Bun first if needed:
 
 ```bash
-npm i -g ardex
+curl -fsSL https://bun.sh/install | bash
+```
+
+Install globally with npm:
+
+```bash
+npm install -g ardex
 ardex init
 ardex start
 open http://127.0.0.1:17373
+```
+
+Run without a global install:
+
+```bash
+npx ardex init
+npx ardex start
+open http://127.0.0.1:17373
+```
+
+Or with Bun's package runner:
+
+```bash
+bunx ardex init
+bunx ardex start
+open http://127.0.0.1:17373
+```
+
+`npx` still needs Bun on `PATH` because the published CLI entrypoint is executed by Bun, not Node.
+
+## Daily Use
+
+Initialize once:
+
+```bash
+ardex init
+```
+
+Start or check the local daemon:
+
+```bash
+ardex start
+ardex check --json
+```
+
+Open the dashboard:
+
+```bash
+open http://127.0.0.1:17373
+```
+
+Use the dashboard to review project/session state, visible outputs, open asks, scale risk, and VDD scenario approvals. Use the CLI for agent-owned workflow mutations such as task claim, pause/resume, owner assignment, progress, checklist, and done.
+
+Common CLI flow:
+
+```bash
+ardex project add /path/to/project
+ardex project current --json
+ardex -p p_001 session start --goal "Build MVP"
+ardex -p p_001 task add "Implement storage" --priority 1
+ardex -p p_001 statement --json
+ardex -p p_001 task t_001 claim --json
+ardex -p p_001 task t_001 checklist --json
 ```
 
 For local development:
@@ -161,4 +222,18 @@ Security notes: [docs/SECURITY.md](docs/SECURITY.md)
 ```bash
 bun run check
 bun test
+```
+
+## Release
+
+Release automation lives in [`.github/workflows/release.yml`](.github/workflows/release.yml). Pull requests, `main` pushes, and version tags run typecheck, tests, and the web build. Tags named `v*` also attempt `npm publish --access public` when `NPM_TOKEN` is configured; without the token, the tag build verifies and skips publishing.
+
+Before publishing locally or tagging a release:
+
+```bash
+bun install --frozen-lockfile
+bun run check
+bun test
+bun run build
+npm pack --dry-run
 ```

@@ -31,6 +31,8 @@
   .stack-form,
   .priority-form,
   .output-review-form,
+  .project-cleanup,
+  .project-cleanup form,
   .form-grid {
     grid-template-columns: 1fr;
   }

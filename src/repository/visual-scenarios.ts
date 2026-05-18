@@ -3,7 +3,7 @@ import { notFound, transitionRejected } from "../errors.ts";
 import { createId, nextAlias } from "../ids.ts";
 import { sanitizeEvidencePayload, sanitizeEvidenceSummary } from "../redaction.ts";
 import type { Evidence, Project, Task } from "./types.ts";
-import { type EvidenceRow, evidenceFromRow } from "./rows.ts";
+import { type EvidenceRow, type TaskRow, evidenceFromRow } from "./rows.ts";
 import { findCurrentSessionId } from "./sessions.ts";
 
 export const VISUAL_SCENARIO_PROMPT_KIND = "visual_scenario_prompt";
@@ -93,17 +93,19 @@ export function visualScenarioState(db: Database, projectId: string, task: Task)
   const promptEvidence = evidence.find((item) => item.payload["kind"] === VISUAL_SCENARIO_PROMPT_KIND && item.status !== "rejected") ?? null;
   const scenarioEvidence = evidence.filter((item) => item.payload["kind"] === VISUAL_SCENARIO_CONFIRM_KIND && hasSafeRenderableVisualScenario(item));
   const approvedScenario = scenarioEvidence.find((item) => item.status === "accepted") ?? null;
+  const inheritedScenario = approvedScenario === null ? approvedParentVisualScenario(db, projectId, task) : null;
+  const approvedEvidence = approvedScenario ?? inheritedScenario;
   const pendingScenarios = scenarioEvidence.filter((item) => item.status === "candidate");
   const rejectedScenarios = scenarioEvidence.filter((item) => item.status === "rejected");
   const prompt = typeof promptEvidence?.payload["prompt"] === "string" ? promptEvidence.payload["prompt"] : null;
-  const nextAction = !required || approvedScenario !== null ? null : promptEvidence === null ? `create_visual_scenario_prompt:${task.alias}` : `confirm_visual_scenario:${task.alias}`;
+  const nextAction = !required || approvedEvidence !== null ? null : promptEvidence === null ? `create_visual_scenario_prompt:${task.alias}` : `confirm_visual_scenario:${task.alias}`;
 
   return {
     required,
-    approved: approvedScenario !== null,
+    approved: approvedEvidence !== null,
     taskId: task.alias,
     promptEvidenceId: promptEvidence?.alias ?? null,
-    imageEvidenceId: approvedScenario?.alias ?? pendingScenarios[0]?.alias ?? null,
+    imageEvidenceId: approvedEvidence?.alias ?? pendingScenarios[0]?.alias ?? null,
     pendingEvidenceIds: pendingScenarios.map((item) => item.alias),
     rejectedEvidenceIds: rejectedScenarios.map((item) => item.alias),
     prompt,
@@ -112,6 +114,8 @@ export function visualScenarioState(db: Database, projectId: string, task: Task)
       ? "visual scenario not required"
       : approvedScenario !== null
         ? `approved=${approvedScenario.alias}`
+        : inheritedScenario !== null
+          ? `inherited=${inheritedScenario.alias}`
         : promptEvidence === null
           ? "missing visual scenario prompt"
           : "waiting for approved visual scenario artifact",
@@ -155,6 +159,22 @@ function visualScenarioEvidence(db: Database, projectId: string, taskId: string)
     )
     .all(projectId, taskId) as EvidenceRow[];
   return rows.map(evidenceFromRow);
+}
+
+function approvedParentVisualScenario(db: Database, projectId: string, task: Task): Evidence | null {
+  const parentAlias = task.content.match(/Parent task:\s*([A-Za-z0-9_-]+)/)?.[1];
+  if (parentAlias === undefined) {
+    return null;
+  }
+  const parent = db.query("SELECT id FROM tasks WHERE project_id = ? AND alias = ?").get(projectId, parentAlias) as Pick<TaskRow, "id"> | null;
+  if (parent === null) {
+    return null;
+  }
+  return (
+    visualScenarioEvidence(db, projectId, parent.id).find(
+      (item) => item.payload["kind"] === VISUAL_SCENARIO_CONFIRM_KIND && item.status === "accepted" && hasSafeRenderableVisualScenario(item),
+    ) ?? null
+  );
 }
 
 function hasSafeRenderableVisualScenario(evidence: Evidence): boolean {

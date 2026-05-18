@@ -2,6 +2,7 @@ import type { ArdexPaths } from "./paths.ts";
 import { openDatabase } from "./db.ts";
 import {
   addTask,
+  archiveProject,
   buildProductionChecklist,
   claimTask,
   completeSession,
@@ -11,6 +12,7 @@ import {
   requireProject,
   resumeTask,
   setSessionField,
+  setProjectName,
   setTaskOwner,
   setTaskField,
   splitTaskFromScale,
@@ -34,6 +36,14 @@ export function setSessionStatusForDashboard(paths: ArdexPaths, projectRef: stri
 
 export function completeSessionForDashboard(paths: ArdexPaths, projectRef: string): unknown {
   return mutateDb(paths, (db) => completeSession(db, projectRef));
+}
+
+export function renameProjectForDashboard(paths: ArdexPaths, projectRef: string, name: string): unknown {
+  return mutateDb(paths, (db) => setProjectName(db, projectRef, name));
+}
+
+export function archiveProjectForDashboard(paths: ArdexPaths, projectRef: string): unknown {
+  return mutateDb(paths, (db) => archiveProject(db, projectRef));
 }
 
 export function addTaskForDashboard(

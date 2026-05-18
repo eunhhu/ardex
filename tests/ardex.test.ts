@@ -293,6 +293,36 @@ test("task delete compacts priorities and leaves delete event", async () => {
   }
 });
 
+test("task delete compacts a long priority range without unique collisions", async () => {
+  const { db, project } = await dbFixture();
+  try {
+    const task1 = addTask(db, project.alias, { title: "task 1" });
+    const task2 = addTask(db, project.alias, { title: "task 2" });
+    const task3 = addTask(db, project.alias, { title: "task 3" });
+    const task4 = addTask(db, project.alias, { title: "task 4" });
+    const task5 = addTask(db, project.alias, { title: "task 5" });
+    const task6 = addTask(db, project.alias, { title: "task 6" });
+    const task7 = addTask(db, project.alias, { title: "task 7" });
+    const task8 = addTask(db, project.alias, { title: "task 8" });
+    deleteTask(db, project.alias, task4.alias);
+    const remaining = listTasks(db, project.alias);
+
+    expect(remaining.map((task) => task.priority)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(new Set(remaining.map((task) => task.priority)).size).toBe(7);
+    expect(remaining.map((task) => task.alias)).toEqual([
+      task1.alias,
+      task2.alias,
+      task3.alias,
+      task5.alias,
+      task6.alias,
+      task7.alias,
+      task8.alias,
+    ]);
+  } finally {
+    db.close();
+  }
+});
+
 test("evidence redacts secrets before storage", async () => {
   const { db, project } = await dbFixture();
   try {
@@ -584,6 +614,37 @@ test("visual scenario gate accepts approved non-image renderable artifact", asyn
     expect(claimTask(db, project.alias, task.alias).status).toBe("active");
     const checklist = buildProductionChecklist(db, project.alias, task.alias);
     expect(checklist.items.find((item) => item.id === "visual_scenario_confirm")?.passed).toBe(true);
+  } finally {
+    db.close();
+  }
+});
+
+test("split child can inherit approved parent visual scenario", async () => {
+  const { db, project } = await dbFixture();
+  try {
+    startSession(db, project.alias, { goal: "child visual inheritance" });
+    storeScaleReport(db, project.alias, await scanScale({ projectPath: project.path, paths: [] }));
+    const parent = addTask(db, project.alias, { title: "dashboard cleanup", qualityGate: "visual" });
+    const prompt = ensureVisualScenarioPrompt(db, project, parent);
+    const approved = addEvidence(db, project.alias, {
+      type: "generated_image",
+      targetType: "task",
+      targetRef: parent.alias,
+      status: "accepted",
+      summary: "approved parent scenario",
+      payload: { kind: "visual_scenario_confirm", path: "scenario.png", prompt: prompt.payload.prompt },
+    });
+    const child = addTask(db, project.alias, {
+      title: "dashboard project cleanup controls",
+      content: `Generated from scale report sc_001.\nParent task: ${parent.alias}.\nTarget slice 1/2.`,
+      qualityGate: "test",
+    });
+    setTaskField(db, project.alias, child.alias, "content", "Edited child implementation scope.");
+
+    expect(claimTask(db, project.alias, child.alias).status).toBe("active");
+    const item = buildProductionChecklist(db, project.alias, child.alias).items.find((entry) => entry.id === "visual_scenario_confirm");
+    expect(item?.passed).toBe(true);
+    expect(item?.detail).toBe(`inherited=${approved.alias}`);
   } finally {
     db.close();
   }

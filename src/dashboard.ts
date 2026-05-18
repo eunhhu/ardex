@@ -8,6 +8,7 @@ import { VERSION, type JsonEnvelope } from "./output.ts";
 import { requireProject } from "./repository.ts";
 import {
   addTaskForDashboard,
+  archiveProjectForDashboard,
   claimTaskForDashboard,
   completeSessionForDashboard,
   completeTaskForDashboard,
@@ -15,6 +16,7 @@ import {
   pauseTaskForDashboard,
   resumeTaskForDashboard,
   runScaleCheckForDashboard,
+  renameProjectForDashboard,
   setSessionStatusForDashboard,
   setTaskOwnerForDashboard,
   setTaskPriorityForDashboard,
@@ -57,6 +59,15 @@ export async function handleDashboardRequest(request: Request, paths: ArdexPaths
 
     if (request.method === "GET" && segments[1] === "projects" && segments.length === 2) {
       return dataResponse({ projects: readProjects(paths) });
+    }
+    if (request.method === "POST" && segments[1] === "projects" && segments[3] === "rename") {
+      const body = await readJsonBody(request);
+      return dataResponse({
+        project: renameProjectForDashboard(paths, requiredSegment(segments, 2, "project"), requiredString(body, "name")),
+      });
+    }
+    if (request.method === "POST" && segments[1] === "projects" && segments[3] === "archive") {
+      return dataResponse({ project: archiveProjectForDashboard(paths, requiredSegment(segments, 2, "project")) });
     }
     if (request.method === "GET" && segments[1] === "projects" && segments[3] === "dashboard") {
       return dataResponse(await buildDashboardSnapshot(paths, requiredSegment(segments, 2, "project")));
