@@ -169,6 +169,21 @@ export type Statement = {
     blockingFindings: number;
     nextSplitRequired: boolean;
   };
+  subagents: {
+    required: boolean;
+    reason: string | null;
+    instruction: string | null;
+    pending: Array<{
+      id: string;
+      alias: string;
+      title: string;
+      owner: string;
+      role: string;
+      status: string;
+      priority: number;
+      estimatedWeight: number | null;
+    }>;
+  };
   blockers: string[];
   nextExpectedAction: string | null;
 };

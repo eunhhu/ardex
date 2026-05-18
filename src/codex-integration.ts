@@ -165,7 +165,9 @@ Use Ardex CLI as source of truth for project/session/task state. Prefer stable J
 - Before implementation, run \`ardex -p <project> scale check --path <target> --json\`.
 - Claim a task before editing: \`ardex -p <project> task <task> claim --json\`.
 - If a user-paused task exists, do not resume it unless the statement says \`resume:<task_id>\` or the user explicitly asks.
-- Respect task owner. Use \`subagent:<role>\` as delegation hint and keep Ardex updated with \`task <task> assign <owner>\`.
+- Respect task owner. If \`statement.subagents.required\` is true or a task owner starts with \`subagent:\`, treat that as an explicit Ardex delegation request: spawn/use a separate Codex subagent for that task when subagent tools are available. Main context coordinates, integrates, and verifies.
+- Give each subagent only its task id, owner role, bounded scope, expected output, and allowed files/responsibility. Do not let the main context absorb subagent-owned implementation unless subagent tools are unavailable; in that case report the limitation instead of silently continuing.
+- Keep Ardex updated with \`task <task> assign <owner>\` when ownership changes.
 - Do not duplicate Codex command/file logs in Ardex. Use Ardex evidence only for user decisions, external URLs, manual QA notes, deploy links, or artifacts Codex cannot reconstruct.
 - Use \`ardex -p <project> ask "<question>" --json\` when blocked by user choice.
 - When an ask is answered, read \`ardex statement --json\` and continue from \`nextExpectedAction\`.
@@ -177,6 +179,7 @@ Use Ardex CLI as source of truth for project/session/task state. Prefer stable J
 ## Scale Rules
 
 - Split work when scale recommends \`split\`, weight is above 13, or file findings include \`block\`.
+- After splitting, preserve separated context by assigning bounded child tasks to unique \`subagent:<role>\` owners unless the task is intentionally main-context integration work.
 - Do not create oversized files. Prefer new modules below 400 source lines.
 - Waive scale findings only with explicit reason and only when tracked by Ardex.
 `;
@@ -276,9 +279,11 @@ const lines = [
   "Session: " + (data.session?.id || "none") + " " + (data.session?.status || ""),
   "Current task: " + (data.currentTask ? data.currentTask.id + " " + data.currentTask.status + " " + data.currentTask.title : "none"),
   "Owner: " + (data.currentTask?.owner || "none"),
+  "Subagents: " + subagentSummary(data.subagents),
   "Next: " + (data.nextExpectedAction || "none"),
   "Blockers: " + (Array.isArray(data.blockers) ? data.blockers.length : 0),
-  "Rules: check Ardex statement before work; claim/resume task before edits; keep task state current; use evidence only for external/user-visible artifacts; run checklist before done."
+  "Rules: check Ardex statement before work; claim/resume task before edits; keep task state current; use evidence only for external/user-visible artifacts; run checklist before done.",
+  "Subagent rule: when Ardex lists pending subagent-owned tasks, treat it as an explicit delegation request; spawn one bounded subagent per task when available, and keep main context for coordination/integration."
 ];
 
 output({
@@ -312,6 +317,18 @@ function ensureDaemon(command, cwd) {
   const checked = runJson(command, ["check", "--json"], cwd);
   if (checked?.ok) return;
   runJson(command, ["start", "--json"], cwd);
+}
+
+function subagentSummary(plan) {
+  if (!plan || !Array.isArray(plan.pending) || plan.pending.length === 0) {
+    return plan?.instruction || "none";
+  }
+  const pending = plan.pending
+    .slice(0, 6)
+    .map((task) => task.id + ":" + task.owner + ":" + task.status + ":" + task.title)
+    .join(" | ");
+  const suffix = plan.pending.length > 6 ? " | +" + (plan.pending.length - 6) + " more" : "";
+  return "required; " + pending + suffix + "; " + (plan.instruction || "");
 }
 
 function output(value) {

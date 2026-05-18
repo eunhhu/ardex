@@ -165,11 +165,15 @@ export function formatObject(value: Record<string, unknown>): string {
 }
 
 export function formatStatement(statement: Statement): string {
+  const subagentLine = statement.subagents.required
+    ? `subagents: required ${statement.subagents.pending.map((task) => `${task.id}:${task.owner}`).join(", ")}`
+    : `subagents: none${statement.subagents.reason ? ` (${statement.subagents.reason})` : ""}`;
   return [
     `project: ${statement.project.id} ${statement.project.path}`,
     `session: ${statement.session?.id ?? "none"} ${statement.session?.status ?? ""}`,
     `goal: ${statement.session?.goal ?? ""}`,
     `currentTask: ${statement.currentTask?.id ?? "none"} ${statement.currentTask?.title ?? ""}`,
+    subagentLine,
     `next: ${statement.nextExpectedAction ?? ""}`,
     `blockers: ${statement.blockers.length}`,
   ].join("\n");

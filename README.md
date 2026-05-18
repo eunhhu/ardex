@@ -138,7 +138,7 @@ Autonomous workflow controls now also include:
 - task pause/resume/delete/owner assignment with runtime and event history
 - ask answer resume markers through `statement.nextExpectedAction`
 - lightweight checklist before `task done`
-- scale-based child task generation with `subagent:<role>` owner routing
+- scale-based child task generation with unique `subagent:<role>` owners and prompt-time delegation guidance
 - dashboard output panel for generated images, screenshots, prototypes, URLs, and browser diffs
 
 API contract: [docs/API.md](docs/API.md)

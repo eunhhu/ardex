@@ -13,6 +13,7 @@ import {
   addProject,
   addTask,
   archiveProject,
+  buildStatement,
   buildProductionChecklist,
   completeTask,
   deleteTask,
@@ -51,7 +52,13 @@ test("init installs Codex skill and hooks without touching real home when overri
   const result = await initializeArdex(paths, { installCodex: true });
 
   expect(result.codex.skillPath).toEndWith("skills/ardex/SKILL.md");
-  expect(await readFile(result.codex.skillPath, "utf8")).toContain("name: ardex");
+  const skill = await readFile(result.codex.skillPath, "utf8");
+  expect(skill).toContain("name: ardex");
+  expect(skill).toContain("statement.subagents.required");
+  expect(skill).toContain("explicit Ardex delegation request");
+  const promptHookPath = result.codex.hookScriptPaths.find((path) => path.endsWith("user-prompt-context.mjs"));
+  expect(promptHookPath).toBeDefined();
+  expect(await readFile(promptHookPath ?? "", "utf8")).toContain("Subagent rule");
   const hooks = JSON.parse(await readFile(result.codex.hooksConfigPath, "utf8")) as { hooks: Record<string, unknown[]> };
   expect(hooks.hooks.UserPromptSubmit?.length).toBe(1);
   expect(hooks.hooks.Stop?.length).toBe(1);
@@ -147,6 +154,21 @@ test("task runtime pause resume owner and delete are tracked as events", async (
     expect(events).toContain("resumed");
     expect(events).toContain("owner_changed");
     expect(events).toContain("completed");
+  } finally {
+    db.close();
+  }
+});
+
+test("statement exposes subagent delegation plan", async () => {
+  const { db, project } = await dbFixture();
+  try {
+    const task = addTask(db, project.alias, { title: "delegated slice", qualityGate: "review" });
+    setTaskOwner(db, project.alias, task.alias, "subagent:worker-1");
+    const statement = buildStatement(db, project.alias);
+    expect(statement.subagents.required).toBe(true);
+    expect(statement.subagents.pending[0]?.id).toBe(task.alias);
+    expect(statement.subagents.pending[0]?.role).toBe("worker-1");
+    expect(statement.subagents.instruction).toContain("Spawn separate Codex subagents");
   } finally {
     db.close();
   }
@@ -340,8 +362,10 @@ test("scale split creates weighted subagent-owned child tasks", async () => {
     const scan = await scanScale({ projectPath: project.path, paths: ["src"] });
     storeScaleReport(db, project.alias, scan);
     const split = splitTaskFromScale(db, project.alias, task.alias);
+    const owners = split.tasks.map((item) => item.owner);
     expect(split.tasks.length).toBeGreaterThanOrEqual(2);
-    expect(split.tasks.some((item) => item.owner === "subagent:worker")).toBe(true);
+    expect(owners.every((owner) => owner.startsWith("subagent:worker-"))).toBe(true);
+    expect(new Set(owners).size).toBe(owners.length);
     expect(listTasks(db, project.alias).find((item) => item.alias === task.alias)?.status).toBe("blocked");
   } finally {
     db.close();

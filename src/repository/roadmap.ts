@@ -40,7 +40,7 @@ export function splitTaskFromScale(db: Database, projectRef: string, taskRef: st
       sessionId: parent.sessionId ?? undefined,
     });
     setTaskField(db, projectRef, task.alias, "estimated_weight", String(partWeight));
-    setTaskField(db, projectRef, task.alias, "owner", ownerForWeight(partWeight));
+    setTaskField(db, projectRef, task.alias, "owner", ownerForSplit(index));
     created.push(requireTask(db, task.alias));
   }
 
@@ -54,9 +54,6 @@ export function splitTaskFromScale(db: Database, projectRef: string, taskRef: st
   };
 }
 
-function ownerForWeight(weight: number): string {
-  if (weight <= 3) {
-    return "main";
-  }
-  return "subagent:worker";
+function ownerForSplit(index: number): string {
+  return `subagent:worker-${index + 1}`;
 }

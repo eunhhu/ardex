@@ -1355,8 +1355,8 @@ Custom agents:
 
 1. Optional user agents: `~/.codex/agents/ardex-explorer.toml`, `~/.codex/agents/ardex-worker.toml`.
 2. Optional repo agents: `<repo>/.codex/agents/ardex-explorer.toml`, `<repo>/.codex/agents/ardex-worker.toml`.
-3. Ardex task owners map to Codex agent roles only as labels unless the user explicitly asks Codex to spawn subagents.
-4. `ardex task <id> assign subagent:explorer` records intended ownership and emits prompt guidance; it does not spawn Codex agents by itself.
+3. Ardex task owners are routing instructions, not passive labels. When a statement contains pending `subagent:<role>` tasks, prompt injection must tell Codex to spawn/use separated subagent contexts when available.
+4. `ardex task <id> assign subagent:explorer` records intended ownership and emits prompt guidance. Main Codex coordinates, integrates, and verifies instead of silently implementing subagent-owned work in the main context.
 
 Deferred JSONL adapter:
 
@@ -1427,6 +1427,9 @@ Rules:
 4. Subagent result is not done until parent attaches verification evidence.
 5. Agent assignment follows scale estimate instead of giving equal agents to unequal work.
 6. If sibling task weights differ by more than `3x`, split or merge before spawning agents.
+7. `statement.subagents.required` is true when open tasks have `subagent:<role>` owners.
+8. UserPromptSubmit hook context must include pending subagent task ids, roles, status, and instruction to spawn/use one bounded subagent per task when available.
+9. If subagent tools are unavailable, Codex must report that limitation instead of silently doing subagent-owned implementation in the main context.
 
 Task owner examples:
 
@@ -1778,7 +1781,7 @@ Scale reports must drive planning, not only blocking.
 1. Weight `>13`, `recommendedAgent=split`, or blocking source files create split recommendations.
 2. `scale split --task <id>` creates child tasks with balanced estimated weights.
 3. Generated child tasks inherit quality gate, acceptance context, and priority order.
-4. Child owners are assigned by weight: `low` stays `main`, `standard` can use `subagent:worker`, `strong` uses `subagent:worker`, `split` remains blocked until split again.
+4. Child owners are assigned to unique roles such as `subagent:worker-1`, `subagent:worker-2`, and remain bounded to their generated slice. Main context owns integration/review.
 5. The dashboard shows roadmap imbalance and owner distribution before implementation starts.
 
 ### Production Checklist

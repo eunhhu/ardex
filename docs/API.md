@@ -64,7 +64,7 @@ HTTP status mapping:
 - `POST /api/projects/:project/scale/findings/:finding/waive`
   Body: `{ "reason": "at least 20 characters" }`
 
-Dashboard snapshots include task runtime fields (`startedAt`, `pausedAt`, `resumedAt`, `activeSeconds`, `runtimeSeconds`, `pauseReason`), production checklist state, and output artifacts extracted from accepted `screenshot`, `generated_image`, `prototype`, `url`, and `browser_diff` evidence.
+Dashboard snapshots include task runtime fields (`startedAt`, `pausedAt`, `resumedAt`, `activeSeconds`, `runtimeSeconds`, `pauseReason`), production checklist state, `statement.subagents` delegation guidance, and output artifacts extracted from accepted `screenshot`, `generated_image`, `prototype`, `url`, and `browser_diff` evidence.
 
 The dashboard UI exposes user-facing controls for project switching, session start, detailed task creation, task priority reorder, ask answer, scale operations, and optional artifact accept/reject. Agent-owned task status, progress, pause/resume, done, delete, and owner mutation remain CLI/API surfaces and are not presented as casual dashboard buttons.
 
