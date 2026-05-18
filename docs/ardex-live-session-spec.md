@@ -1075,20 +1075,20 @@ Event shape:
 MVP screens:
 
 1. Project command switcher: searchable non-archived projects with clean name, path, and id.
-2. Project dashboard: current goal, session status, runtime, active task.
+2. Project dashboard: implementation level, progress, current focus, readiness, visible outputs, and risks.
 3. Feature map: features, importance, estimated weight, toy output status.
 4. Task board: ordered tasks with read-only progress/status/owner and user-editable priority.
-5. Task detail: content, evidence, asks, advisor notes.
+5. Task detail: content, asks, owner, advisor notes, and verification receipts.
 6. Ask inbox: open user questions with attached images/files.
-7. Evidence gallery: screenshots, URLs, command/test summaries.
+7. Verification log: collapsed receipt/debug view for screenshots, URLs, command/test summaries, user decisions, and manual QA notes.
 8. Scale map: feature/task weights, oversized files, split recommendations, agent tier suggestions.
 
 UX requirements:
 
 1. Progress visible in first viewport.
 2. Active task and blocker visible without clicking.
-3. Every `done` task must show why it is done.
-4. Visual work should show screenshot, generated image, prototype, or runnable URL when such artifact is attached.
+3. Every `done` task must show why it is done through compact readiness/checklist status, not by forcing users into raw evidence.
+4. Visual work should show screenshot, generated image, prototype, or runnable URL as visible output when such artifact is attached.
 5. User can add a task through a modal with title, content, priority, importance, owner hint, and quality-gate label.
 6. User can reorder priority from UI.
 7. User can answer asks from UI.
@@ -1103,18 +1103,20 @@ Project dashboard first viewport:
 
 1. Header: project name, path, daemon status, live connection status.
 2. Sticky session strip: agent running/idle state, current goal, session status, current task, next action, and runtime. It remains visible while scrolling and does not steal focus during SSE updates.
-3. Active work: current task, progress, quality gate, owner, next expected action.
-4. Blocker card: open asks, stale waivers, paused work, or scale blocks.
-5. Gate summary: scale, spec, visual, demo, readiness labels.
-6. Latest outputs: screenshot, generated image, URL, prototype, or manual QA note when attached.
+3. Project review cards: implementation level, total progress, current focus, and readiness.
+4. Active work: current task, progress, quality gate, owner, next expected action.
+5. Blocker and risk visibility: open asks, stale waivers, paused work, scale blocks, or oversized scope.
+6. Latest visible outputs: screenshot, generated image, URL, prototype, browser result, or manual QA note when attached.
 7. Primary actions: answer ask, add task, reorder priority, run scale check, open demo.
+8. Evidence/receipts are not first-class progress UI. They appear as a collapsed `Verification Log` for audit/debug use.
 
 Empty states:
 
 1. No project: show `ardex project add <path>` and `ardex init`.
 2. No session: show `ardex session start`.
 3. No task: show create task and scale check actions.
-4. No evidence: show required evidence for current gate.
+4. No visible output: show that no demo, screenshot, generated image, or browser result is attached yet.
+5. No verification receipts: keep the collapsed log and explain receipts are for external artifacts, user decisions, and manual QA notes.
 
 Loading states:
 
@@ -1667,7 +1669,7 @@ Evidence security:
 
 UI e2e:
 
-1. First viewport shows goal, status, active task, blocker, latest evidence, and gate status.
+1. First viewport shows implementation level, progress, current focus, readiness, blocker, and latest visible outputs.
 2. CLI task progress update appears through SSE without reload.
 3. Answering an ask in UI clears blocked state when no other blockers remain.
 

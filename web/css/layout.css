@@ -34,6 +34,11 @@ main {
   padding: 14px;
 }
 
+.summary-card:first-child {
+  border-color: rgba(17, 106, 102, 0.32);
+  background: linear-gradient(180deg, #ffffff 0%, #f2faf8 100%);
+}
+
 .label {
   margin-bottom: 8px;
   color: var(--muted);
@@ -47,6 +52,10 @@ main {
   font-size: 20px;
   font-weight: 700;
   line-height: 1.18;
+}
+
+.summary-card:first-child .value {
+  color: var(--accent);
 }
 
 .subvalue {
@@ -88,6 +97,24 @@ main {
   display: grid;
   gap: 12px;
   align-content: start;
+}
+
+.verification-log {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.verification-log > summary {
+  min-height: 42px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+
+.verification-log:not([open]) > summary {
+  border-bottom: 0;
 }
 
 @media (max-width: 960px) {

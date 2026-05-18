@@ -44,29 +44,22 @@ export function render() {
   const openAsks = data.asks.filter((ask) => ask.status === "open");
   const latestScale = data.scale.latest;
   const blockingFindings = latestScale ? latestScale.findings.filter((finding) => finding.severity === "block" && !finding.waivedAt).length : 0;
+  const review = projectReview(data, session, activeTask, latestScale, openAsks, blockingFindings);
 
   renderSessionStrip(data, session, activeTask);
-  els.goalCard.innerHTML = card("Goal", session?.goal || "No active goal", compactPath(data.project.path));
-  els.statusCard.innerHTML = renderSessionCard(session);
-  els.taskCard.innerHTML = card(
-    "Current Task",
-    activeTask ? activeTask.id + " · " + activeTask.title : "None",
-    activeTask ? pct(activeTask.progress) + " · " + activeTask.owner + " · " + fmtRuntime(activeTask.runtimeSeconds) : data.statement?.nextExpectedAction || "no next action",
-  );
-  els.scaleCard.innerHTML = card(
-    "Scale",
-    latestScale ? "weight " + latestScale.estimate.weight + " · " + latestScale.estimate.recommendedAgent : "No report",
-    latestScale ? blockingFindings + " blocking findings · " + latestScale.estimate.complexity : "run scale check",
-  );
+  els.goalCard.innerHTML = card("Project Review", review.level, review.levelDetail);
+  els.statusCard.innerHTML = card("Progress", review.progress, review.progressDetail);
+  els.taskCard.innerHTML = renderFocusCard(data, session, activeTask, review);
+  els.scaleCard.innerHTML = card("Readiness", review.readiness, review.readinessDetail);
   els.taskCount.textContent = String(data.tasks.length);
   els.askCount.textContent = String(openAsks.length) + " open";
-  els.evidenceCount.textContent = String(data.evidence.length);
+  els.evidenceCount.textContent = String(data.evidence.length) + " receipts";
   els.outputCount.textContent = String(data.outputs.length);
   els.scaleCount.textContent = latestScale ? String(latestScale.findings.length) + " findings" : "0";
   els.tasks.innerHTML = data.tasks.length === 0 ? empty("No tasks.") : data.tasks.map(renderTask).join("");
   els.asks.innerHTML = data.asks.length === 0 ? empty("No asks.") : data.asks.map(renderAsk).join("");
-  els.outputs.innerHTML = data.outputs.length === 0 ? empty("No outputs.") : data.outputs.map(renderOutput).join("");
-  els.evidence.innerHTML = data.evidence.length === 0 ? empty("No evidence.") : data.evidence.map(renderEvidence).join("");
+  els.outputs.innerHTML = renderOutputs(data.outputs);
+  els.evidence.innerHTML = renderVerificationLog(data.evidence);
   els.scale.innerHTML = renderScale(latestScale);
 }
 
@@ -88,15 +81,8 @@ function renderEmptyApp() {
   els.tasks.innerHTML = empty("No project registered.");
   els.asks.innerHTML = empty("No project registered.");
   els.outputs.innerHTML = empty("No project registered.");
-  els.evidence.innerHTML = empty("No project registered.");
+  els.evidence.innerHTML = renderVerificationLog([]);
   els.scale.innerHTML = empty("No project registered.");
-}
-
-function renderSessionCard(session) {
-  if (!session) {
-    return '<div class="label">Session</div><div class="value">No session</div><form class="stack-form" data-session-form><input name="goal" placeholder="Goal"><button>Start</button></form>';
-  }
-  return card("Session", session.status, "runtime " + fmtRuntime(session.runtimeSeconds) + " · " + session.mode);
 }
 
 function renderSessionStrip(data, session, task) {
@@ -131,6 +117,17 @@ function renderSessionStrip(data, session, task) {
     "</span>";
 }
 
+function renderFocusCard(data, session, activeTask, review) {
+  if (!session) {
+    return '<div class="label">Current Focus</div><div class="value">No session</div><form class="stack-form" data-session-form><input name="goal" placeholder="Goal"><button>Start</button></form>';
+  }
+  return card(
+    "Current Focus",
+    activeTask ? activeTask.id + " · " + activeTask.title : review.nextAction,
+    activeTask ? pct(activeTask.progress) + " · " + activeTask.owner + " · " + fmtRuntime(activeTask.runtimeSeconds) : session.goal || compactPath(data.project.path),
+  );
+}
+
 function currentSession(data) {
   const statementSession = data.statement?.session || null;
   const fallback = data.sessions[0] || null;
@@ -143,6 +140,41 @@ function currentTask(data, session) {
     return data.statement.currentTask;
   }
   return data.tasks.find((task) => task.id === session?.currentTaskRef) || null;
+}
+
+function projectReview(data, session, activeTask, latestScale, openAsks, blockingFindings) {
+  const totalTasks = data.tasks.length;
+  const doneTasks = data.tasks.filter((task) => task.status === "done").length;
+  const activeTasks = data.tasks.filter((task) => task.status === "active").length;
+  const blockedTasks = data.tasks.filter((task) => task.status === "blocked" || task.status === "paused").length;
+  const progressValue = totalTasks === 0 ? 0 : data.tasks.reduce((sum, task) => sum + Number(task.progress || 0), 0) / totalTasks;
+  const scaleClear = latestScale ? !latestScale.blocked && blockingFindings === 0 : false;
+  const checklistClear = totalTasks > 0 && data.tasks.every((task) => task.status === "done" || task.checklistPassed);
+  const hasVisibleOutput = data.outputs.length > 0;
+  const level = implementationLevel({ totalTasks, doneTasks, activeTasks, hasVisibleOutput, scaleClear, openAsks, blockedTasks });
+  const readinessBlocked = openAsks.length > 0 || blockedTasks > 0 || blockingFindings > 0 || latestScale?.blocked === true;
+  const readiness = readinessBlocked ? "Blocked" : checklistClear && scaleClear ? "Production-ready" : activeTask ? "In progress" : "Needs review";
+  const nextAction = data.statement?.nextExpectedAction || (session ? "review_session" : "start_session");
+
+  return {
+    level,
+    levelDetail: [data.project.name, session?.status || "no session", session?.mode || "no mode"].filter(Boolean).join(" · "),
+    progress: pct(progressValue),
+    progressDetail: `${doneTasks}/${totalTasks} done · ${activeTasks} active · ${blockedTasks} blocked`,
+    readiness,
+    readinessDetail: latestScale ? `scale ${latestScale.estimate.weight} · asks ${openAsks.length} · outputs ${data.outputs.length}` : `scale missing · asks ${openAsks.length}`,
+    nextAction,
+  };
+}
+
+function implementationLevel(input) {
+  if (input.totalTasks === 0) return "Planning";
+  if (input.openAsks.length > 0 || input.blockedTasks > 0) return "Blocked";
+  if (input.doneTasks === input.totalTasks && input.scaleClear) return "Production-ready";
+  if (input.hasVisibleOutput && input.activeTasks === 0) return "Reviewable build";
+  if (input.hasVisibleOutput) return "Working demo";
+  if (input.activeTasks > 0) return "Implementation";
+  return "Spec only";
 }
 
 function renderTask(task) {
@@ -184,6 +216,28 @@ function renderEvidence(evidence) {
   const actions = evidence.status === "candidate" ? '<div class="actions"><button data-evidence-action="accept" data-evidence-id="' + h(evidence.id) + '">Accept</button><button class="secondary" data-evidence-action="reject" data-evidence-id="' + h(evidence.id) + '">Reject</button></div>' : "";
   const detail = '<details><summary>Payload</summary><pre class="mono">' + h(JSON.stringify(evidence.payload || {}, null, 2)) + "</pre></details>";
   return '<article class="item"><div class="item-head"><div class="item-title">' + h(evidence.summary) + '</div><span class="pill ' + level + '">' + h(evidence.status) + '</span></div><div class="meta">' + pill(evidence.id) + pill(evidence.type) + pill(evidence.targetType + (evidence.targetRef ? ":" + evidence.targetRef : "")) + "</div>" + detail + actions + "</article>";
+}
+
+function renderOutputs(outputs) {
+  if (outputs.length === 0) {
+    return empty("No demo, screenshot, generated image, or browser result yet.");
+  }
+  return outputs.map(renderOutput).join("");
+}
+
+function renderVerificationLog(evidence) {
+  if (evidence.length === 0) {
+    return '<details class="verification-log"><summary>No verification receipts yet</summary>' + empty("Agent receipts will appear here when external artifacts, user decisions, or manual QA notes are attached.") + "</details>";
+  }
+  const accepted = evidence.filter((item) => item.status === "accepted").length;
+  const candidates = evidence.filter((item) => item.status === "candidate").length;
+  return (
+    '<details class="verification-log"><summary>' +
+    h(accepted + " accepted · " + candidates + " pending · " + evidence.length + " total") +
+    "</summary>" +
+    evidence.map(renderEvidence).join("") +
+    "</details>"
+  );
 }
 
 function renderOutput(output) {

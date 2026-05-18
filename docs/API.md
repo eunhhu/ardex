@@ -68,6 +68,8 @@ Dashboard snapshots include task runtime fields (`startedAt`, `pausedAt`, `resum
 
 The dashboard UI exposes user-facing controls for project switching, session start, detailed task creation, task priority reorder, ask answer, scale operations, and optional artifact accept/reject. Agent-owned task status, progress, pause/resume, done, delete, and owner mutation remain CLI/API surfaces and are not presented as casual dashboard buttons. A sticky session strip remains visible while scrolling and shows agent activity, session status, goal, current task, and runtime.
 
+The first viewport prioritizes project review: implementation level, progress, current focus, readiness, visible outputs, open asks, and scale risk. Evidence data remains available through the API and dashboard as a collapsed `Verification Log`; it is treated as agent receipts/debug context, not the main user-facing progress model.
+
 ## Security
 
 - Mutating dashboard endpoints accept local host only.

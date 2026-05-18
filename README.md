@@ -132,6 +132,8 @@ bun run index.ts init
 
 Dashboard controls support searchable project switching, session start, detailed task creation, priority reorder, scale check/split/waiver, ask answer, and optional artifact accept/reject. Task status, progress, pause/resume, done, delete, and owner assignment are agent-owned CLI/API controls, so the dashboard shows them as state instead of casual buttons.
 
+The dashboard first viewport is optimized for project review rather than raw evidence browsing: project implementation level, progress, current focus, readiness, visible outputs, and risks are shown first. Evidence remains in storage as agent receipts, but the UI demotes it to a collapsed `Verification Log` so users are not forced to parse command-like proof trails.
+
 Autonomous workflow controls now also include:
 
 - daemon auto-start for stateful CLI/hook paths
