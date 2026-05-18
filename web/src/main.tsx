@@ -6,13 +6,13 @@ import { projectName, shortPath } from "./format.ts";
 import type { DashboardSnapshot, ProjectSummary } from "./types.ts";
 import { AddTaskDialog } from "./components/AddTaskDialog.tsx";
 import { AskItem } from "./components/AskItem.tsx";
-import { OutputItem } from "./components/OutputItem.tsx";
 import { ProjectMenu } from "./components/ProjectMenu.tsx";
 import { ScalePanel } from "./components/ScalePanel.tsx";
 import { SessionStrip } from "./components/SessionStrip.tsx";
 import { FocusCard, SummaryCard } from "./components/Summary.tsx";
 import { TaskItem } from "./components/TaskItem.tsx";
 import { VerificationLog } from "./components/VerificationLog.tsx";
+import { VisibleOutputsPanel } from "./components/VisibleOutputsPanel.tsx";
 import { Empty, Panel } from "./components/shared.tsx";
 import "../styles.css";
 
@@ -160,7 +160,7 @@ function App() {
 
           <aside class="side-stack">
             <Panel title="Visible Outputs" count={String(snapshot?.outputs.length ?? 0)}>
-              {!snapshot?.outputs.length ? <Empty text="No demo, screenshot, generated image, or browser result yet." /> : snapshot.outputs.map((output) => <OutputItem key={output.id} output={output} projectId={projectId} mutate={mutate} />)}
+              <VisibleOutputsPanel outputs={snapshot?.outputs ?? []} projectId={projectId} mutate={mutate} />
             </Panel>
             <Panel title="User Asks" count={`${openAsks.length} open`}>
               {!snapshot?.asks.length ? <Empty text="No asks." /> : snapshot.asks.map((ask) => <AskItem key={ask.id} ask={ask} projectId={projectId} mutate={mutate} />)}

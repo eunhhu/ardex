@@ -91,30 +91,30 @@ export function visualScenarioState(db: Database, projectId: string, task: Task)
   const required = isVisualScenarioRequired(task);
   const evidence = visualScenarioEvidence(db, projectId, task.id);
   const promptEvidence = evidence.find((item) => item.payload["kind"] === VISUAL_SCENARIO_PROMPT_KIND && item.status !== "rejected") ?? null;
-  const imageEvidence = evidence.filter((item) => item.payload["kind"] === VISUAL_SCENARIO_CONFIRM_KIND && item.type === "generated_image");
-  const approvedImage = imageEvidence.find((item) => item.status === "accepted" && hasRenderableSource(item)) ?? null;
-  const pendingImages = imageEvidence.filter((item) => item.status === "candidate");
-  const rejectedImages = imageEvidence.filter((item) => item.status === "rejected");
+  const scenarioEvidence = evidence.filter((item) => item.payload["kind"] === VISUAL_SCENARIO_CONFIRM_KIND && hasSafeRenderableVisualScenario(item));
+  const approvedScenario = scenarioEvidence.find((item) => item.status === "accepted") ?? null;
+  const pendingScenarios = scenarioEvidence.filter((item) => item.status === "candidate");
+  const rejectedScenarios = scenarioEvidence.filter((item) => item.status === "rejected");
   const prompt = typeof promptEvidence?.payload["prompt"] === "string" ? promptEvidence.payload["prompt"] : null;
-  const nextAction = !required || approvedImage !== null ? null : promptEvidence === null ? `create_visual_scenario_prompt:${task.alias}` : `confirm_visual_scenario:${task.alias}`;
+  const nextAction = !required || approvedScenario !== null ? null : promptEvidence === null ? `create_visual_scenario_prompt:${task.alias}` : `confirm_visual_scenario:${task.alias}`;
 
   return {
     required,
-    approved: approvedImage !== null,
+    approved: approvedScenario !== null,
     taskId: task.alias,
     promptEvidenceId: promptEvidence?.alias ?? null,
-    imageEvidenceId: approvedImage?.alias ?? pendingImages[0]?.alias ?? null,
-    pendingEvidenceIds: pendingImages.map((item) => item.alias),
-    rejectedEvidenceIds: rejectedImages.map((item) => item.alias),
+    imageEvidenceId: approvedScenario?.alias ?? pendingScenarios[0]?.alias ?? null,
+    pendingEvidenceIds: pendingScenarios.map((item) => item.alias),
+    rejectedEvidenceIds: rejectedScenarios.map((item) => item.alias),
     prompt,
     nextAction,
     detail: !required
       ? "visual scenario not required"
-      : approvedImage !== null
-        ? `approved=${approvedImage.alias}`
+      : approvedScenario !== null
+        ? `approved=${approvedScenario.alias}`
         : promptEvidence === null
           ? "missing visual scenario prompt"
-          : "waiting for approved imagegen scenario",
+          : "waiting for approved visual scenario artifact",
   };
 }
 
@@ -149,7 +149,7 @@ function visualScenarioEvidence(db: Database, projectId: string, taskId: string)
         WHERE project_id = ?
           AND target_type = 'task'
           AND target_id = ?
-          AND type IN ('prototype', 'generated_image')
+          AND type IN ('prototype', 'generated_image', 'screenshot', 'browser_diff', 'url', 'artifact')
         ORDER BY created_at DESC
       `,
     )
@@ -157,8 +157,38 @@ function visualScenarioEvidence(db: Database, projectId: string, taskId: string)
   return rows.map(evidenceFromRow);
 }
 
-function hasRenderableSource(evidence: Evidence): boolean {
-  return typeof evidence.payload["path"] === "string" || typeof evidence.payload["url"] === "string";
+function hasSafeRenderableVisualScenario(evidence: Evidence): boolean {
+  if (!["prototype", "generated_image", "screenshot", "browser_diff", "url", "artifact"].includes(evidence.type)) {
+    return false;
+  }
+  const format = visualScenarioFormat(evidence);
+  if (format === "file") {
+    return false;
+  }
+  return (
+    typeof evidence.payload["path"] === "string" ||
+    typeof evidence.payload["url"] === "string" ||
+    typeof evidence.payload["markdown"] === "string" ||
+    typeof evidence.payload["html"] === "string" ||
+    typeof evidence.payload["text"] === "string"
+  );
+}
+
+function visualScenarioFormat(evidence: Evidence): "image" | "markdown" | "html" | "text" | "link" | "file" {
+  const declared = typeof evidence.payload["format"] === "string" ? evidence.payload["format"].toLowerCase() : null;
+  if (declared === "image" || declared === "markdown" || declared === "html" || declared === "text" || declared === "link" || declared === "file") {
+    return declared;
+  }
+  if (typeof evidence.payload["markdown"] === "string") return "markdown";
+  if (typeof evidence.payload["html"] === "string") return "html";
+  if (typeof evidence.payload["text"] === "string") return "text";
+  const source = typeof evidence.payload["url"] === "string" ? evidence.payload["url"] : typeof evidence.payload["path"] === "string" ? evidence.payload["path"] : "";
+  if (evidence.type === "generated_image" || evidence.type === "screenshot" || /\.(png|jpe?g|gif|webp|avif)(\?|$)/i.test(source)) return "image";
+  if (evidence.type === "browser_diff" || /\.(html?|xhtml)(\?|$)/i.test(source)) return "html";
+  if (/\.(md|markdown)(\?|$)/i.test(source)) return "markdown";
+  if (/\.(txt|log)(\?|$)/i.test(source)) return "text";
+  if (/^https?:\/\//i.test(source)) return "link";
+  return "file";
 }
 
 function assertTaskInProject(project: Project, task: Task): void {

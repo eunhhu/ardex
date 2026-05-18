@@ -314,7 +314,8 @@ const lines = [
   "Blockers: " + (Array.isArray(data.blockers) ? data.blockers.length : 0),
   "Mandatory flow: continue from the Ardex session/task above; do not re-plan from scratch unless no session/task exists.",
   "Rules: check Ardex statement before work; for visual/UX tasks create imagegen scenario and wait for Visible Outputs approval before implementation; claim/resume task before edits; keep task state current; use evidence only for external/user-visible artifacts; run checklist before done.",
-  "Subagent rule: when Ardex lists pending subagent-owned tasks, treat it as an explicit delegation request; spawn one bounded subagent per task when available, and keep main context for coordination/integration."
+  "Subagent rule: when Ardex lists pending subagent-owned tasks, treat it as an explicit delegation request; spawn one bounded subagent per task when available, and keep main context for coordination/integration.",
+  "Continuation rule: if Next starts with spawn_subagent:, spawn that subagent immediately instead of asking the user what to do next."
 ];
 
 output({

@@ -38,6 +38,7 @@ export function buildStatement(db: Database, projectRef: string): Statement {
     )
     .all(project.id) as TaskRow[];
   const subagentTasks = subagentRows.map(taskFromRow);
+  const subagents = buildSubagentPlan(subagentTasks, scaleSummary.nextSplitRequired);
 
   return {
     project: {
@@ -79,9 +80,9 @@ export function buildStatement(db: Database, projectRef: string): Statement {
       nextSplitRequired: scaleSummary.nextSplitRequired,
     },
     visualScenario,
-    subagents: buildSubagentPlan(subagentTasks, scaleSummary.nextSplitRequired),
+    subagents,
     blockers: blockerRows.map((row) => `${row.alias}: ${row.question}`),
-    nextExpectedAction: visualScenario?.nextAction ?? session?.nextExpectedAction ?? null,
+    nextExpectedAction: nextExpectedAction(visualScenario, session, currentTask, subagents),
   };
 }
 
@@ -124,4 +125,27 @@ function buildSubagentPlan(tasks: Task[], splitRequired: boolean): Statement["su
     instruction: splitRequired ? "Run scale split first, then assign generated child tasks to bounded subagent owners." : null,
     pending,
   };
+}
+
+function nextExpectedAction(
+  visualScenario: Statement["visualScenario"],
+  session: Session | null,
+  currentTask: Task | null,
+  subagents: Statement["subagents"],
+): string | null {
+  if (visualScenario?.nextAction) {
+    return visualScenario.nextAction;
+  }
+  if (currentTask !== null) {
+    return session?.nextExpectedAction ?? `work:${currentTask.alias}`;
+  }
+  if (subagents.required && subagents.pending.length > 0) {
+    const todo = subagents.pending.find((task) => task.status === "todo");
+    if (todo !== undefined) {
+      return `spawn_subagent:${todo.alias}`;
+    }
+    const active = subagents.pending.find((task) => task.status === "active");
+    return active === undefined ? "coordinate_subagents" : `monitor_subagent:${active.alias}`;
+  }
+  return session?.nextExpectedAction ?? null;
 }

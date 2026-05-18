@@ -76,12 +76,19 @@ export type TaskSummary = {
 export type OutputSummary = {
   id: string;
   type: string;
+  kind: "image" | "markdown" | "html" | "link" | "file" | "artifact";
+  format: "image" | "markdown" | "html" | "text" | "link" | "file";
+  mimeType: string | null;
   status: string;
   taskRef: string | null;
   summary: string;
   path: string | null;
   url: string | null;
+  markdown: string | null;
+  html: string | null;
+  text: string | null;
   previewUrl: string | null;
+  renderable: boolean;
   renderableImage: boolean;
   visualScenario: boolean;
   prompt: string | null;

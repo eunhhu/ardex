@@ -7,6 +7,7 @@ import { initializeStorage } from "../src/daemon.ts";
 import { openDatabase } from "../src/db.ts";
 import { initializeArdex } from "../src/init.ts";
 import { checkCommand, statementCommand } from "../src/cli-core-commands.ts";
+import { evidenceCommand } from "../src/cli-workflow-commands.ts";
 import { getArdexPaths } from "../src/paths.ts";
 import { migrateCodexProjects } from "../src/codex-migration.ts";
 import {
@@ -207,6 +208,7 @@ test("statement exposes subagent delegation plan", async () => {
     expect(statement.subagents.pending[0]?.id).toBe(task.alias);
     expect(statement.subagents.pending[0]?.role).toBe("worker-1");
     expect(statement.subagents.instruction).toContain("Spawn separate Codex subagents");
+    expect(statement.nextExpectedAction).toBe(`spawn_subagent:${task.alias}`);
   } finally {
     db.close();
   }
@@ -473,6 +475,63 @@ test("dashboard pause resume owner and generated image outputs update snapshot",
   expect(dashboard.data.outputs.some((output: any) => output.type === "generated_image" && output.renderableImage === true)).toBe(true);
 });
 
+test("dashboard output summaries expose markdown and html artifact metadata", async () => {
+  const { paths, db, project } = await dbFixture();
+  startSession(db, project.alias, { goal: "rich outputs" });
+  const task = addTask(db, project.alias, { title: "document visible outputs" });
+  addEvidence(db, project.alias, {
+    type: "artifact",
+    targetType: "task",
+    targetRef: task.alias,
+    summary: "markdown summary",
+    payload: { markdown: "## Result\n\nDone.", format: "markdown" },
+  });
+  addEvidence(db, project.alias, {
+    type: "prototype",
+    targetType: "task",
+    targetRef: task.alias,
+    summary: "html summary",
+    payload: { html: "<section>Done.</section>", format: "html" },
+  });
+  db.close();
+
+  const dashboard = await getJson(paths, `/api/projects/${project.alias}/dashboard`);
+  const markdown = dashboard.data.outputs.find((output: any) => output.summary === "markdown summary");
+  const html = dashboard.data.outputs.find((output: any) => output.summary === "html summary");
+
+  expect(markdown.kind).toBe("markdown");
+  expect(markdown.format).toBe("markdown");
+  expect(markdown.mimeType).toBe("text/markdown");
+  expect(markdown.markdown).toContain("Done.");
+  expect(markdown.renderable).toBe(true);
+  expect(html.kind).toBe("html");
+  expect(html.format).toBe("html");
+  expect(html.mimeType).toBe("text/html");
+  expect(html.html).toContain("<section>");
+});
+
+test("cli evidence add accepts markdown html and text payload fields", async () => {
+  const { paths, db, project } = await dbFixture();
+  process.env.ARDEX_HOME = paths.home;
+  startSession(db, project.alias, { goal: "cli rich evidence" });
+  const task = addTask(db, project.alias, { title: "cli output" });
+  db.close();
+
+  await evidenceCommand({
+    args: ["evidence", "add", "artifact", "--task", task.alias, "--summary", "cli artifact", "--markdown", "# Notes", "--html", "<p>Notes</p>", "--text", "Notes"],
+    commandName: "evidence",
+    json: true,
+    noStart: false,
+    projectId: project.alias,
+  });
+
+  const dashboard = await getJson(paths, `/api/projects/${project.alias}/dashboard`);
+  const output = dashboard.data.outputs.find((item: any) => item.summary === "cli artifact");
+  expect(output.markdown).toBe("# Notes");
+  expect(output.html).toBe("<p>Notes</p>");
+  expect(output.text).toBe("Notes");
+});
+
 test("dashboard shows visual scenario candidates and records review comments", async () => {
   const { paths, db, project } = await dbFixture();
   await writeFile(join(project.path, "scenario.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=", "base64"));
@@ -502,6 +561,32 @@ test("dashboard shows visual scenario candidates and records review comments", a
   const accepted = after.data.outputs.find((output: any) => output.id === evidence.alias);
   expect(accepted.status).toBe("accepted");
   expect(accepted.reviewComment).toBe("approved direction");
+});
+
+test("visual scenario gate accepts approved non-image renderable artifact", async () => {
+  const { db, project } = await dbFixture();
+  try {
+    startSession(db, project.alias, { goal: "html scenario" });
+    storeScaleReport(db, project.alias, await scanScale({ projectPath: project.path, paths: [] }));
+    const task = addTask(db, project.alias, { title: "dashboard html scenario", qualityGate: "visual" });
+    const prompt = ensureVisualScenarioPrompt(db, project, task);
+    const candidate = addEvidence(db, project.alias, {
+      type: "prototype",
+      targetType: "task",
+      targetRef: task.alias,
+      status: "candidate",
+      summary: "visual scenario html",
+      payload: { kind: "visual_scenario_confirm", html: "<main>Expected state</main>", format: "html", prompt: prompt.payload.prompt },
+    });
+
+    expect(() => claimTask(db, project.alias, task.alias)).toThrow("Visual scenario approval is required");
+    setEvidenceStatus(db, project.alias, candidate.alias, "accepted", { comment: "html scenario approved" });
+    expect(claimTask(db, project.alias, task.alias).status).toBe("active");
+    const checklist = buildProductionChecklist(db, project.alias, task.alias);
+    expect(checklist.items.find((item) => item.id === "visual_scenario_confirm")?.passed).toBe(true);
+  } finally {
+    db.close();
+  }
 });
 
 test("codex project migration registers existing paths from metadata", async () => {
