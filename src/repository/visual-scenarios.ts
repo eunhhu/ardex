@@ -3,7 +3,7 @@ import { notFound, transitionRejected } from "../errors.ts";
 import { createId, nextAlias } from "../ids.ts";
 import { sanitizeEvidencePayload, sanitizeEvidenceSummary } from "../redaction.ts";
 import type { Evidence, Project, Task } from "./types.ts";
-import { type EvidenceRow, type TaskRow, evidenceFromRow } from "./rows.ts";
+import { type EvidenceRow, type TaskRow, evidenceFromRow, taskFromRow } from "./rows.ts";
 import { findCurrentSessionId } from "./sessions.ts";
 
 export const VISUAL_SCENARIO_PROMPT_KIND = "visual_scenario_prompt";
@@ -34,8 +34,19 @@ export function isVisualScenarioRequired(task: Task): boolean {
   if (task.qualityGate === "visual") {
     return true;
   }
-  const uxText = `${task.title}\n${task.content}`;
-  return /\b(ui|ux|dashboard|frontend|front-end|screen|layout|interaction|user flow|browser|css)\b/i.test(uxText);
+  return hasExplicitVisualScenarioRequest(`${task.title}\n${task.content}`);
+}
+
+function hasExplicitVisualScenarioRequest(text: string): boolean {
+  const explicitTriggers = [
+    /\b(generate|create|make|prepare|produce|draft)\s+(a\s+)?(vdd\s+)?(visual\s+)?scenario\b/i,
+    /\bvisual\s+(approval|direction|checkpoint|confirmation|confirm|sign-?off)\b/i,
+    /\b(vdd|visual)\s+(gate|checkpoint|confirmation|confirm|approval)\b/i,
+    /\b(use|run|invoke)\s+imagegen\b/i,
+    /\bimagegen\s+(scenario|candidate|mockup|preview)\b/i,
+    /\bscenario\s+(approval|confirm|confirmation)\b/i,
+  ];
+  return explicitTriggers.some((pattern) => pattern.test(text));
 }
 
 export function buildVisualScenarioPrompt(project: Project, task: Task): string {
@@ -88,12 +99,13 @@ export function ensureVisualScenarioPrompt(db: Database, project: Project, task:
 }
 
 export function visualScenarioState(db: Database, projectId: string, task: Task): VisualScenarioState {
-  const required = isVisualScenarioRequired(task);
+  const parentTask = parentTaskForVisualScenario(db, projectId, task);
+  const required = isVisualScenarioRequired(task) || (parentTask !== null && isVisualScenarioRequired(parentTask));
   const evidence = visualScenarioEvidence(db, projectId, task.id);
   const promptEvidence = evidence.find((item) => item.payload["kind"] === VISUAL_SCENARIO_PROMPT_KIND && item.status !== "rejected") ?? null;
   const scenarioEvidence = evidence.filter((item) => item.payload["kind"] === VISUAL_SCENARIO_CONFIRM_KIND && hasSafeRenderableVisualScenario(item));
   const approvedScenario = scenarioEvidence.find((item) => item.status === "accepted") ?? null;
-  const inheritedScenario = approvedScenario === null ? approvedParentVisualScenario(db, projectId, task) : null;
+  const inheritedScenario = approvedScenario === null && parentTask !== null ? approvedParentVisualScenario(db, projectId, parentTask) : null;
   const approvedEvidence = approvedScenario ?? inheritedScenario;
   const pendingScenarios = scenarioEvidence.filter((item) => item.status === "candidate");
   const rejectedScenarios = scenarioEvidence.filter((item) => item.status === "rejected");
@@ -161,20 +173,24 @@ function visualScenarioEvidence(db: Database, projectId: string, taskId: string)
   return rows.map(evidenceFromRow);
 }
 
-function approvedParentVisualScenario(db: Database, projectId: string, task: Task): Evidence | null {
-  const parentAlias = task.content.match(/Parent task:\s*([A-Za-z0-9_-]+)/)?.[1];
-  if (parentAlias === undefined) {
-    return null;
-  }
-  const parent = db.query("SELECT id FROM tasks WHERE project_id = ? AND alias = ?").get(projectId, parentAlias) as Pick<TaskRow, "id"> | null;
-  if (parent === null) {
-    return null;
-  }
+function approvedParentVisualScenario(db: Database, projectId: string, parent: Task): Evidence | null {
   return (
     visualScenarioEvidence(db, projectId, parent.id).find(
       (item) => item.payload["kind"] === VISUAL_SCENARIO_CONFIRM_KIND && item.status === "accepted" && hasSafeRenderableVisualScenario(item),
     ) ?? null
   );
+}
+
+function parentTaskForVisualScenario(db: Database, projectId: string, task: Task): Task | null {
+  const parentAlias = task.content.match(/Parent task:\s*([A-Za-z0-9_-]+)/)?.[1];
+  if (parentAlias === undefined) {
+    return null;
+  }
+  const parent = db.query("SELECT * FROM tasks WHERE project_id = ? AND alias = ?").get(projectId, parentAlias) as TaskRow | null;
+  if (parent === null) {
+    return null;
+  }
+  return taskFromRow(parent);
 }
 
 function hasSafeRenderableVisualScenario(evidence: Evidence): boolean {

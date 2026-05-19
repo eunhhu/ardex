@@ -21,6 +21,7 @@ import {
   claimTask,
   deleteTask,
   ensureVisualScenarioPrompt,
+  visualScenarioState,
   listEvidence,
   listTaskEvents,
   listTasks,
@@ -62,6 +63,8 @@ test("init installs Codex skill and hooks without touching real home when overri
   expect(skill).toContain("name: ardex");
   expect(skill).toContain("statement.subagents.required");
   expect(skill).toContain("explicit Ardex delegation request");
+  expect(skill).toContain("Generic UI/UX/frontend/dashboard/CSS wording alone is advisory");
+  expect(skill).not.toContain("UX-impactful tasks");
   const promptHookPath = result.codex.hookScriptPaths.find((path) => path.endsWith("user-prompt-context.mjs"));
   expect(promptHookPath).toBeDefined();
   expect(await readFile(promptHookPath ?? "", "utf8")).toContain("Subagent rule");
@@ -373,6 +376,44 @@ test("visual scenario gate blocks visual task claim until approved imagegen outp
     expect(claimTask(db, project.alias, task.alias).status).toBe("active");
     const checklist = buildProductionChecklist(db, project.alias, task.alias);
     expect(checklist.items.find((item) => item.id === "visual_scenario_confirm")?.passed).toBe(true);
+  } finally {
+    db.close();
+  }
+});
+
+test("visual scenario gate is not triggered by broad UI keywords alone", async () => {
+  const { db, project } = await dbFixture();
+  try {
+    startSession(db, project.alias, { goal: "ui keyword advisory" });
+    storeScaleReport(db, project.alias, await scanScale({ projectPath: project.path, paths: [] }));
+    const task = addTask(db, project.alias, {
+      title: "dashboard UI layout polish",
+      content: "frontend css interaction tweak",
+      qualityGate: "test",
+    });
+
+    expect(visualScenarioState(db, project.id, task).required).toBe(false);
+    expect(claimTask(db, project.alias, task.alias).status).toBe("active");
+  } finally {
+    db.close();
+  }
+});
+
+test("explicit visual checkpoint wording still requires visual approval", async () => {
+  const { db, project } = await dbFixture();
+  try {
+    startSession(db, project.alias, { goal: "explicit visual checkpoint" });
+    storeScaleReport(db, project.alias, await scanScale({ projectPath: project.path, paths: [] }));
+    const task = addTask(db, project.alias, {
+      title: "prepare visual approval for dashboard state",
+      content: "Generate a scenario before implementation so the user can approve the direction.",
+      qualityGate: "test",
+    });
+
+    const state = visualScenarioState(db, project.id, task);
+    expect(state.required).toBe(true);
+    expect(state.nextAction).toBe(`create_visual_scenario_prompt:${task.alias}`);
+    expect(() => claimTask(db, project.alias, task.alias)).toThrow("Visual scenario approval is required");
   } finally {
     db.close();
   }

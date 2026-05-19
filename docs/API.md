@@ -3,7 +3,7 @@
 Daemon binds to `127.0.0.1` by default. Responses use one envelope:
 
 ```json
-{ "ok": true, "data": {}, "meta": { "surface": "dashboard", "version": "0.1.3" } }
+{ "ok": true, "data": {}, "meta": { "surface": "dashboard", "version": "0.1.5" } }
 ```
 
 Errors use:
@@ -12,7 +12,7 @@ Errors use:
 {
   "ok": false,
   "error": { "code": "VALIDATION_ERROR", "message": "Field title is required.", "details": {} },
-  "meta": { "surface": "dashboard", "version": "0.1.3" }
+  "meta": { "surface": "dashboard", "version": "0.1.5" }
 }
 ```
 
@@ -73,7 +73,33 @@ HTTP status mapping:
 - `POST /api/projects/:project/scale/findings/:finding/waive`
   Body: `{ "reason": "at least 20 characters" }`
 
-Dashboard snapshots include task runtime fields (`startedAt`, `pausedAt`, `resumedAt`, `activeSeconds`, `runtimeSeconds`, `pauseReason`), production checklist state, `statement.subagents` delegation guidance, `statement.visualScenario` approval state, `statement.session.agent` activity (`running|idle`, `lastSeenAt`, `staleSeconds`), and output artifacts extracted from accepted `screenshot`, `generated_image`, `prototype`, `url`, and `browser_diff` evidence. Candidate or rejected `generated_image` evidence with `payload.kind="visual_scenario_confirm"` is also included in Visible Outputs for VDD approval.
+### Phase A Autonomy Primitives
+
+These endpoints expose visibility records only. Phase A does not make the daemon spawn Codex subagents, create worktrees, merge patches, or run unattended swarms. The caller creates and updates records while Codex or another coordinator performs the actual work.
+
+- `GET /api/projects/:project/agent-runs?status=:status`
+  Returns agent runs for the project, optionally filtered by `queued|running|blocked|completed|failed|cancelled`.
+- `POST /api/projects/:project/agent-runs`
+  Body: `{ "taskId": "optional task id", "owner": "main|subagent:<role>", "goal": "optional goal", "summary": "optional summary", "model": "optional model label", "metadata": {} }`
+- `POST /api/projects/:project/agent-runs/:run/heartbeat`
+  Body: `{ "status": "optional run status" }`
+- `POST /api/projects/:project/agent-runs/:run/status`
+  Body: `{ "status": "queued|running|blocked|completed|failed|cancelled", "summary": "optional summary" }`
+- `GET /api/projects/:project/agent-actions?run=:run`
+  Returns readable timeline chapters. Use `run` to filter to one agent run.
+- `POST /api/projects/:project/agent-actions`
+  Body: `{ "runId": "run id", "taskId": "optional task id", "type": "note|command|file|decision|status|error", "status": "pending|running|completed|failed|skipped", "summary": "string", "payload": {} }`
+- `POST /api/projects/:project/agent-actions/:action/end`
+  Body: `{ "status": "completed", "summary": "optional summary", "payload": {} }`
+- `GET /api/projects/:project/decisions?status=open`
+  Returns Decision Queue items. Use `status=open|answered|dismissed` to filter.
+- `POST /api/projects/:project/decisions`
+  Body: `{ "taskId": "optional task id", "agentRunId": "optional run id", "question": "string", "priority": 1, "options": [{ "id": "approve", "label": "Approve", "consequence": "string" }], "payload": {} }`
+- `POST /api/projects/:project/decisions/:decision/answer`
+  Body: `{ "answer": "option id or text" }`
+- `POST /api/projects/:project/decisions/:decision/dismiss`
+
+Dashboard snapshots include task runtime fields (`startedAt`, `pausedAt`, `resumedAt`, `activeSeconds`, `runtimeSeconds`, `pauseReason`), production checklist state, `statement.subagents` delegation guidance, `statement.visualScenario` approval state, `statement.session.agent` activity (`running|idle`, `lastSeenAt`, `staleSeconds`), Phase A `agentRuns`, `agentActions`, and `decisions`, and output artifacts extracted from accepted `screenshot`, `generated_image`, `prototype`, `url`, and `browser_diff` evidence. Candidate or rejected `generated_image` evidence with `payload.kind="visual_scenario_confirm"` is also included in Visible Outputs for VDD approval.
 
 The dashboard UI exposes user-facing controls for searchable project switching, project rename/archive cleanup, session start, detailed task creation, task priority reorder, ask answer, scale operations, and visual scenario approve/reject with comments. Agent-owned task status, progress, pause/resume, done, delete, and owner mutation remain CLI/API surfaces and are not presented as casual dashboard buttons. A sticky session strip remains visible while scrolling and shows agent activity, session status, goal, current task, and runtime.
 

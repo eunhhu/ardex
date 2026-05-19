@@ -3,10 +3,15 @@ import { openDatabase } from "./db.ts";
 import type { ArdexPaths } from "./paths.ts";
 import {
   answerAsk,
+  answerDecision,
   buildProductionChecklist,
   buildStatement,
+  dismissDecision,
   latestScaleReport,
+  listAgentActions,
+  listAgentRuns,
   listAsks,
+  listDecisions,
   listEvidence,
   listProjects,
   listScaleReports,
@@ -15,8 +20,11 @@ import {
   sessionAgentActivity,
   setEvidenceStatus,
   taskRuntimeSeconds,
+  type AgentAction,
   type AgentActivity,
+  type AgentRun,
   type Ask,
+  type Decision,
   type Evidence,
   type FileScaleFinding,
   type Project,
@@ -36,6 +44,9 @@ export type DashboardSnapshot = {
   statement: Statement | null;
   sessions: SessionSummary[];
   tasks: TaskSummary[];
+  agentRuns: AgentRunSummary[];
+  agentActions: AgentActionSummary[];
+  decisions: DecisionSummary[];
   evidence: EvidenceSummary[];
   outputs: OutputSummary[];
   asks: AskSummary[];
@@ -85,6 +96,55 @@ type TaskSummary = {
   runtimeSeconds: number;
   pauseReason: string | null;
   checklistPassed: boolean;
+};
+
+type AgentRunSummary = {
+  id: string;
+  sessionId: string | null;
+  sessionRef: string | null;
+  taskId: string | null;
+  taskRef: string | null;
+  owner: string;
+  role: string;
+  status: string;
+  pid: number | null;
+  worktreePath: string | null;
+  branchName: string | null;
+  model: string | null;
+  autonomyBudget: Record<string, unknown>;
+  goal: string;
+  summary: string;
+  metadata: Record<string, unknown>;
+  startedAt: string | null;
+  lastSeenAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type AgentActionSummary = {
+  id: string;
+  sessionId: string | null;
+  sessionRef: string | null;
+  runId: string;
+  runRef: string | null;
+  taskId: string | null;
+  taskRef: string | null;
+  sequence: number;
+  type: string | null;
+  kind: string | null;
+  status: string;
+  title: string;
+  summary: string;
+  payload: Record<string, unknown>;
+  currentFile: string | null;
+  command: string | null;
+  progress: number | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 type EvidenceSummary = {
@@ -138,6 +198,42 @@ type AskSummary = {
   answeredAt: string | null;
 };
 
+type DecisionOptionSummary = {
+  id: string;
+  label: string;
+  description: string | null;
+  consequence: string | null;
+};
+
+type DecisionSummary = {
+  id: string;
+  sessionId: string | null;
+  sessionRef: string | null;
+  taskId: string | null;
+  taskRef: string | null;
+  runId: string | null;
+  runRef: string | null;
+  actionId: string | null;
+  type: string | null;
+  priority: number;
+  agentRunId: string | null;
+  agentRunRef: string | null;
+  question: string;
+  context: string;
+  options: DecisionOptionSummary[];
+  recommendedOption: string | null;
+  required: boolean;
+  status: string;
+  answer: string | null;
+  dismissedReason: string | null;
+  resolvedBy: string | null;
+  resolvedAt: string | null;
+  answeredAt: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type ScaleEstimateSummary = {
   id: string;
   targetType: string;
@@ -182,8 +278,12 @@ export async function buildDashboardSnapshot(paths: ArdexPaths, projectRef?: str
 
     const sessions = listSessions(db, project.alias);
     const tasks = listTasks(db, project.alias);
+    const agentRuns: AgentRun[] = listAgentRuns(db, project.alias);
+    const agentActions: AgentAction[] = listAgentActions(db, project.alias);
+    const decisions: Decision[] = listDecisions(db, project.alias);
     const taskById = new Map(tasks.map((task) => [task.id, task]));
     const sessionById = new Map(sessions.map((session) => [session.id, session]));
+    const agentRunById = new Map(agentRuns.map((run) => [run.id, run]));
     const latestScale = tryLatestScaleReport(db, project.alias);
 
     return {
@@ -193,6 +293,9 @@ export async function buildDashboardSnapshot(paths: ArdexPaths, projectRef?: str
       statement: buildStatement(db, project.alias),
       sessions: sessions.map((session) => sessionSummary(session, taskById)),
       tasks: tasks.map((task) => taskSummary(db, project.alias, task)),
+      agentRuns: agentRuns.map((run) => agentRunSummary(run, taskById, sessionById)),
+      agentActions: agentActions.map((action) => agentActionSummary(action, taskById, sessionById, agentRunById)),
+      decisions: decisions.map((decision) => decisionSummary(decision, taskById, sessionById, agentRunById)),
       evidence: listEvidence(db, project.alias).map((item) => evidenceSummary(item, taskById, sessionById)),
       outputs: listEvidence(db, project.alias).map((item) => outputSummary(item, project, taskById)).filter((item): item is OutputSummary => item !== null),
       asks: listAsks(db, project.alias).map(askSummary),
@@ -217,6 +320,36 @@ export function readProjects(paths: ArdexPaths): ProjectSummary[] {
 
 export function answerAskForDashboard(paths: ArdexPaths, projectRef: string, askRef: string, answer: string): AskSummary {
   return mutateDb(paths, (db) => askSummary(answerAsk(db, projectRef, askRef, answer)));
+}
+
+export function answerDecisionForDashboard(paths: ArdexPaths, projectRef: string, decisionRef: string, answer: string): DecisionSummary {
+  return mutateDb(paths, (db) => {
+    const decision = answerDecision(db, projectRef, decisionRef, answer);
+    const tasks = listTasks(db, projectRef);
+    const sessions = listSessions(db, projectRef);
+    const agentRuns: AgentRun[] = listAgentRuns(db, projectRef);
+    return decisionSummary(
+      decision,
+      new Map(tasks.map((task) => [task.id, task])),
+      new Map(sessions.map((session) => [session.id, session])),
+      new Map(agentRuns.map((run) => [run.id, run])),
+    );
+  });
+}
+
+export function dismissDecisionForDashboard(paths: ArdexPaths, projectRef: string, decisionRef: string, reason?: string): DecisionSummary {
+  return mutateDb(paths, (db) => {
+    const decision = dismissDecision(db, projectRef, decisionRef, reason);
+    const tasks = listTasks(db, projectRef);
+    const sessions = listSessions(db, projectRef);
+    const agentRuns: AgentRun[] = listAgentRuns(db, projectRef);
+    return decisionSummary(
+      decision,
+      new Map(tasks.map((task) => [task.id, task])),
+      new Map(sessions.map((session) => [session.id, session])),
+      new Map(agentRuns.map((run) => [run.id, run])),
+    );
+  });
 }
 
 export function setEvidenceStatusForDashboard(
@@ -251,6 +384,9 @@ function emptySnapshot(projects: Project[]): DashboardSnapshot {
     statement: null,
     sessions: [],
     tasks: [],
+    agentRuns: [],
+    agentActions: [],
+    decisions: [],
     evidence: [],
     outputs: [],
     asks: [],
@@ -322,6 +458,77 @@ function taskSummary(db: ReturnType<typeof openDatabase>, projectRef: string, ta
   };
 }
 
+function agentRunSummary(run: AgentRun, taskById: Map<string, Task>, sessionById: Map<string, Session>): AgentRunSummary {
+  const source = objectRecord(run);
+  const sessionId = nullableString(source["sessionId"]);
+  const taskId = nullableString(source["taskId"]);
+  const owner = stringField(source, "owner") ?? stringField(source, "agentRole") ?? "";
+  const createdAt = stringField(source, "createdAt") ?? "";
+  const updatedAt = stringField(source, "updatedAt") ?? createdAt;
+  return {
+    id: run.alias,
+    sessionId,
+    sessionRef: refById(sessionId, sessionById),
+    taskId,
+    taskRef: refById(taskId, taskById),
+    owner,
+    role: stringField(source, "role") ?? owner,
+    status: stringField(source, "status") ?? "",
+    pid: nullableNumber(source["pid"]),
+    worktreePath: nullableString(source["worktreePath"]),
+    branchName: nullableString(source["branchName"]),
+    model: nullableString(source["model"]),
+    autonomyBudget: recordField(source, "autonomyBudget"),
+    goal: stringField(source, "goal") ?? "",
+    summary: stringField(source, "summary") ?? "",
+    metadata: recordField(source, "metadata"),
+    startedAt: nullableString(source["startedAt"]),
+    lastSeenAt: nullableString(source["lastSeenAt"]) ?? nullableString(source["lastHeartbeatAt"]) ?? updatedAt,
+    completedAt: nullableString(source["completedAt"]) ?? nullableString(source["endedAt"]),
+    createdAt,
+    updatedAt,
+  };
+}
+
+function agentActionSummary(
+  action: AgentAction,
+  taskById: Map<string, Task>,
+  sessionById: Map<string, Session>,
+  runById: Map<string, AgentRun>,
+): AgentActionSummary {
+  const source = objectRecord(action);
+  const sessionId = nullableString(source["sessionId"]);
+  const taskId = nullableString(source["taskId"]);
+  const type = nullableString(source["type"]);
+  const kind = nullableString(source["kind"]) ?? type;
+  const createdAt = stringField(source, "createdAt") ?? "";
+  const updatedAt = stringField(source, "updatedAt") ?? createdAt;
+  return {
+    id: action.alias,
+    sessionId,
+    sessionRef: refById(sessionId, sessionById),
+    runId: action.runId,
+    runRef: refById(action.runId, runById),
+    taskId,
+    taskRef: refById(taskId, taskById),
+    sequence: numberField(source, "sequence") ?? 0,
+    type,
+    kind,
+    status: stringField(source, "status") ?? "",
+    title: stringField(source, "title") ?? "",
+    summary: stringField(source, "summary") ?? "",
+    payload: recordField(source, "payload"),
+    currentFile: nullableString(source["currentFile"]),
+    command: nullableString(source["command"]),
+    progress: nullableNumber(source["progress"]),
+    startedAt: nullableString(source["startedAt"]),
+    endedAt: nullableString(source["endedAt"]),
+    completedAt: nullableString(source["completedAt"]),
+    createdAt,
+    updatedAt,
+  };
+}
+
 function evidenceSummary(evidence: Evidence, taskById: Map<string, Task>, sessionById: Map<string, Session>): EvidenceSummary {
   return {
     id: evidence.alias,
@@ -333,6 +540,59 @@ function evidenceSummary(evidence: Evidence, taskById: Map<string, Task>, sessio
     payload: evidence.payload,
     media: outputSummary(evidence, null, taskById),
     createdAt: evidence.createdAt,
+  };
+}
+
+function decisionSummary(
+  decision: Decision,
+  taskById: Map<string, Task>,
+  sessionById: Map<string, Session>,
+  runById: Map<string, AgentRun>,
+): DecisionSummary {
+  const source = objectRecord(decision);
+  const sessionId = nullableString(source["sessionId"]);
+  const taskId = nullableString(source["taskId"]);
+  const runId = nullableString(source["runId"]);
+  const agentRunId = nullableString(source["agentRunId"]) ?? runId;
+  const metadata = recordField(source, "metadata");
+  const createdAt = stringField(source, "createdAt") ?? "";
+  const updatedAt = stringField(source, "updatedAt") ?? createdAt;
+  return {
+    id: decision.alias,
+    sessionId,
+    sessionRef: refById(sessionId, sessionById),
+    taskId,
+    taskRef: refById(taskId, taskById),
+    runId,
+    runRef: refById(runId, runById),
+    actionId: nullableString(source["actionId"]),
+    type: nullableString(source["type"]) ?? metadataString(metadata, "type"),
+    priority: numberField(source, "priority") ?? 0,
+    agentRunId,
+    agentRunRef: refById(agentRunId, runById),
+    question: stringField(source, "question") ?? "",
+    context: stringField(source, "context") ?? "",
+    options: decision.options.map(decisionOptionSummary),
+    recommendedOption: nullableString(source["recommendedOption"]),
+    required: booleanField(source, "required") ?? (numberField(source, "priority") ?? 0) > 0,
+    status: stringField(source, "status") ?? "",
+    answer: nullableString(source["answer"]),
+    dismissedReason: nullableString(source["dismissedReason"]),
+    resolvedBy: nullableString(source["resolvedBy"]),
+    resolvedAt: nullableString(source["resolvedAt"]),
+    answeredAt: nullableString(source["answeredAt"]) ?? nullableString(source["resolvedAt"]),
+    metadata,
+    createdAt,
+    updatedAt,
+  };
+}
+
+function decisionOptionSummary(option: Decision["options"][number]): DecisionOptionSummary {
+  return {
+    id: option.id,
+    label: option.label,
+    description: fieldString(option, "description"),
+    consequence: fieldString(option, "consequence") ?? fieldString(option, "description"),
   };
 }
 
@@ -497,6 +757,53 @@ function targetRef(evidence: Evidence, taskById: Map<string, Task>, sessionById:
     return sessionById.get(evidence.targetId)?.alias ?? evidence.targetId;
   }
   return evidence.targetId;
+}
+
+function refById<T extends { alias: string }>(id: string | null, itemsById: Map<string, T>): string | null {
+  if (id === null) {
+    return null;
+  }
+  return itemsById.get(id)?.alias ?? null;
+}
+
+function metadataString(metadata: Record<string, unknown>, key: string): string | null {
+  const value = metadata[key];
+  return typeof value === "string" ? value : null;
+}
+
+function objectRecord(value: object): Record<string, unknown> {
+  return value as Record<string, unknown>;
+}
+
+function recordField(source: Record<string, unknown>, key: string): Record<string, unknown> {
+  const value = source[key];
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function stringField(source: Record<string, unknown>, key: string): string | null {
+  return fieldString(source, key);
+}
+
+function fieldString(source: object, key: string): string | null {
+  const value = (source as Record<string, unknown>)[key];
+  return typeof value === "string" ? value : null;
+}
+
+function nullableString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function numberField(source: Record<string, unknown>, key: string): number | null {
+  return nullableNumber(source[key]);
+}
+
+function nullableNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function booleanField(source: Record<string, unknown>, key: string): boolean | null {
+  const value = source[key];
+  return typeof value === "boolean" ? value : null;
 }
 
 function effectiveRuntimeSeconds(session: Session): number {

@@ -1,6 +1,6 @@
 import { ArdexError } from "./errors.ts";
 
-export const VERSION = "0.1.3";
+export const VERSION = "0.1.5";
 
 export type JsonEnvelope =
   | {

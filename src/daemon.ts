@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
 import { closeSync, openSync } from "node:fs";
 import { createServer } from "node:net";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { readConfig, updateConfig, writeConfig, type ArdexConfig } from "./config.ts";
 import { openDatabase, migrateDatabase } from "./db.ts";
 import { handleDashboardRequest } from "./dashboard.ts";
@@ -61,7 +62,7 @@ export async function startDaemon(paths: ArdexPaths = getArdexPaths()): Promise<
   const port = await findAvailablePort(config.port, config.host);
   await writeConfig({ ...config, port, host: config.host || DEFAULT_HOST, pid: undefined }, paths);
 
-  const entryPath = resolve(process.argv[1] ?? "index.ts");
+  const entryPath = resolve(dirname(fileURLToPath(import.meta.url)), "..", "index.ts");
   const logFd = openSync(paths.daemonLogPath, "a");
   const child = spawn(process.execPath, [entryPath, "daemon", "run"], {
     detached: true,

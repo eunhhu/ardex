@@ -105,6 +105,84 @@ export function askSummary(ask: Ask): Record<string, unknown> {
   };
 }
 
+export function agentRunSummary(run: object): Record<string, unknown> {
+  return {
+    id: textField(run, "alias") ?? textField(run, "id"),
+    internalId: textField(run, "id"),
+    projectId: textField(run, "projectId"),
+    sessionId: textField(run, "sessionId"),
+    taskId: textField(run, "taskId"),
+    owner: textField(run, "owner") ?? textField(run, "agentRole"),
+    role: textField(run, "agentRole") ?? textField(run, "owner"),
+    status: textField(run, "status"),
+    pid: numberField(run, "pid"),
+    worktreePath: textField(run, "worktreePath"),
+    branchName: textField(run, "branchName"),
+    model: textField(run, "model"),
+    goal: textField(run, "goal") ?? textField(run, "summary"),
+    summary: textField(run, "summary"),
+    metadata: objectField(run, "metadata") ?? objectField(run, "autonomyBudget"),
+    autonomyBudget: objectField(run, "autonomyBudget"),
+    startedAt: textField(run, "startedAt"),
+    lastSeenAt: textField(run, "lastSeenAt") ?? textField(run, "updatedAt"),
+    completedAt: textField(run, "completedAt"),
+    createdAt: textField(run, "createdAt"),
+    updatedAt: textField(run, "updatedAt"),
+    failureReason: textField(run, "failureReason") ?? textField(run, "reason") ?? textField(run, "error"),
+  };
+}
+
+export function agentActionSummary(action: object): Record<string, unknown> {
+  return {
+    id: textField(action, "alias") ?? textField(action, "id"),
+    internalId: textField(action, "id"),
+    runId: textField(action, "runId"),
+    taskId: textField(action, "taskId"),
+    sequence: numberField(action, "sequence"),
+    type: textField(action, "type") ?? textField(action, "kind"),
+    kind: textField(action, "kind") ?? textField(action, "type"),
+    status: textField(action, "status"),
+    title: textField(action, "title"),
+    summary: textField(action, "summary"),
+    payload: objectField(action, "payload"),
+    currentFile: textField(action, "currentFile"),
+    command: textField(action, "command"),
+    progress: numberField(action, "progress"),
+    startedAt: textField(action, "startedAt"),
+    endedAt: textField(action, "endedAt") ?? textField(action, "completedAt"),
+    completedAt: textField(action, "completedAt") ?? textField(action, "endedAt"),
+    createdAt: textField(action, "createdAt"),
+    updatedAt: textField(action, "updatedAt"),
+  };
+}
+
+export function decisionSummary(decision: object): Record<string, unknown> {
+  return {
+    id: textField(decision, "alias") ?? textField(decision, "id"),
+    internalId: textField(decision, "id"),
+    runId: textField(decision, "runId") ?? textField(decision, "agentRunId"),
+    agentRunId: textField(decision, "agentRunId") ?? textField(decision, "runId"),
+    actionId: textField(decision, "actionId"),
+    taskId: textField(decision, "taskId"),
+    status: textField(decision, "status"),
+    priority: numberField(decision, "priority"),
+    type: textField(decision, "type"),
+    question: textField(decision, "question") ?? textField(decision, "prompt"),
+    context: textField(decision, "context"),
+    answer: textField(decision, "answer"),
+    recommendedOption: textField(decision, "recommendedOption"),
+    required: booleanField(decision, "required"),
+    dismissedReason: textField(decision, "dismissedReason"),
+    resolvedBy: textField(decision, "resolvedBy"),
+    resolvedAt: textField(decision, "resolvedAt") ?? textField(decision, "answeredAt"),
+    answeredAt: textField(decision, "answeredAt") ?? textField(decision, "resolvedAt"),
+    options: arrayField(decision, "options"),
+    metadata: objectField(decision, "metadata"),
+    createdAt: textField(decision, "createdAt"),
+    updatedAt: textField(decision, "updatedAt"),
+  };
+}
+
 export function scaleEstimateSummary(estimate: ScaleEstimate): Record<string, unknown> {
   return {
     id: estimate.alias,
@@ -198,6 +276,9 @@ export function usageText(): string {
     "  task ls|add|check|claim|pause|resume|assign|delete|done|events|checklist|<id> scenario|<id> set",
     "  evidence add|ls|<id> accept|reject|check",
     "  ask <question>|ls|<id> answer",
+    "  agent-run ls|start|heartbeat|done|fail",
+    "  agent-action add|ls|end",
+    "  decision ls|add|<id> answer|<id> dismiss",
     "  scale check|report|waive",
     "  statement            Show current session statement",
     "  version              Print version",
@@ -211,8 +292,53 @@ export function usageText(): string {
 
 export function helpData(): Record<string, unknown> {
   return {
-    commands: ["init", "start", "stop", "check", "status", "project", "session", "task", "evidence", "ask", "scale", "statement", "version"],
+    commands: [
+      "init",
+      "start",
+      "stop",
+      "check",
+      "status",
+      "project",
+      "session",
+      "task",
+      "evidence",
+      "ask",
+      "agent-run",
+      "agent-action",
+      "decision",
+      "scale",
+      "statement",
+      "version",
+    ],
     options: ["--json", "--no-start", "-p <project_id>", "--project <project_id>"],
     version: VERSION,
   };
+}
+
+function textField(value: object, key: string): string | null {
+  const entry = (value as Record<string, unknown>)[key];
+  return typeof entry === "string" ? entry : null;
+}
+
+function objectField(value: object, key: string): Record<string, unknown> | null {
+  const entry = (value as Record<string, unknown>)[key];
+  if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+    return null;
+  }
+  return entry as Record<string, unknown>;
+}
+
+function numberField(value: object, key: string): number | null {
+  const entry = (value as Record<string, unknown>)[key];
+  return typeof entry === "number" ? entry : null;
+}
+
+function booleanField(value: object, key: string): boolean | null {
+  const entry = (value as Record<string, unknown>)[key];
+  return typeof entry === "boolean" ? entry : null;
+}
+
+function arrayField(value: object, key: string): unknown[] {
+  const entry = (value as Record<string, unknown>)[key];
+  return Array.isArray(entry) ? entry : [];
 }

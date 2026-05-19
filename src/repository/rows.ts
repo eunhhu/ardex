@@ -1,4 +1,21 @@
-import type { Ask, Evidence, FileScaleFinding, Project, ScaleEstimate, Session, Task, TaskEvent } from "./types.ts";
+import type {
+  AgentAction,
+  AgentActionStatus,
+  AgentActionType,
+  AgentRun,
+  AgentRunStatus,
+  Ask,
+  Decision,
+  DecisionOption,
+  DecisionStatus,
+  Evidence,
+  FileScaleFinding,
+  Project,
+  ScaleEstimate,
+  Session,
+  Task,
+  TaskEvent,
+} from "./types.ts";
 
 export type ProjectRow = {
   id: string;
@@ -67,6 +84,64 @@ export type TaskEventRow = {
   summary: string;
   payload_json: string;
   created_at: string;
+};
+
+export type AgentRunRow = {
+  id: string;
+  alias: string;
+  project_id: string;
+  session_id: string | null;
+  task_id: string | null;
+  agent_role: string;
+  status: AgentRunStatus;
+  goal: string;
+  summary: string;
+  metadata_json: string;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AgentActionRow = {
+  id: string;
+  alias: string;
+  project_id: string;
+  session_id: string | null;
+  task_id: string | null;
+  run_id: string;
+  sequence: number;
+  type: AgentActionType;
+  status: AgentActionStatus;
+  title: string;
+  summary: string;
+  payload_json: string;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DecisionRow = {
+  id: string;
+  alias: string;
+  project_id: string;
+  session_id: string | null;
+  task_id: string | null;
+  run_id: string | null;
+  action_id: string | null;
+  status: DecisionStatus;
+  priority: number;
+  question: string;
+  context: string;
+  options_json: string;
+  answer: string | null;
+  dismissed_reason: string | null;
+  resolved_by: string | null;
+  resolved_at: string | null;
+  metadata_json: string;
+  created_at: string;
+  updated_at: string;
 };
 
 export type EvidenceRow = {
@@ -211,6 +286,90 @@ export function taskEventFromRow(row: TaskEventRow): TaskEvent {
   };
 }
 
+export function agentRunFromRow(row: AgentRunRow): AgentRun {
+  const metadata = parseJsonObject(row.metadata_json);
+  return {
+    id: row.id,
+    alias: row.alias,
+    projectId: row.project_id,
+    sessionId: row.session_id,
+    taskId: row.task_id,
+    agentRole: row.agent_role,
+    owner: row.agent_role,
+    status: row.status,
+    goal: row.goal,
+    summary: row.summary,
+    metadata,
+    pid: numberFromValue(metadata["pid"]),
+    worktreePath: stringFromValue(metadata["worktreePath"]),
+    branchName: stringFromValue(metadata["branchName"]),
+    model: stringFromValue(metadata["model"]),
+    autonomyBudget: recordFromValue(metadata["autonomyBudget"]),
+    startedAt: row.started_at,
+    lastSeenAt: row.updated_at,
+    completedAt: row.completed_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function agentActionFromRow(row: AgentActionRow): AgentAction {
+  const payload = parseJsonObject(row.payload_json);
+  return {
+    id: row.id,
+    alias: row.alias,
+    projectId: row.project_id,
+    sessionId: row.session_id,
+    taskId: row.task_id,
+    runId: row.run_id,
+    sequence: row.sequence,
+    type: row.type,
+    kind: row.type,
+    status: row.status,
+    title: row.title,
+    summary: row.summary,
+    payload,
+    currentFile: stringFromValue(payload["currentFile"] ?? payload["file"]),
+    command: stringFromValue(payload["command"] ?? payload["cmd"]),
+    progress: numberFromValue(payload["progress"]),
+    startedAt: row.started_at,
+    endedAt: row.completed_at,
+    completedAt: row.completed_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function decisionFromRow(row: DecisionRow): Decision {
+  const metadata = parseJsonObject(row.metadata_json);
+  return {
+    id: row.id,
+    alias: row.alias,
+    projectId: row.project_id,
+    sessionId: row.session_id,
+    taskId: row.task_id,
+    runId: row.run_id,
+    agentRunId: row.run_id,
+    actionId: row.action_id,
+    type: decisionTypeFromValue(metadata["type"]),
+    status: row.status,
+    priority: row.priority,
+    question: row.question,
+    context: row.context,
+    options: parseDecisionOptions(row.options_json),
+    recommendedOption: stringFromValue(metadata["recommendedOption"]),
+    required: booleanFromValue(metadata["required"]) ?? row.priority > 0,
+    answer: row.answer,
+    dismissedReason: row.dismissed_reason,
+    resolvedBy: row.resolved_by,
+    resolvedAt: row.resolved_at,
+    answeredAt: row.resolved_at,
+    metadata,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 export function evidenceFromRow(row: EvidenceRow): Evidence {
   return {
     id: row.id,
@@ -292,4 +451,52 @@ function parseJsonObject(raw: string): Record<string, unknown> {
 function parseJsonArray(raw: string): string[] {
   const parsed = JSON.parse(raw) as unknown;
   return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+}
+
+function parseDecisionOptions(raw: string): DecisionOption[] {
+  const parsed = JSON.parse(raw) as unknown;
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+  return parsed.filter((item): item is DecisionOption => {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) {
+      return false;
+    }
+    const option = item as Record<string, unknown>;
+    return (
+      typeof option["id"] === "string" &&
+      typeof option["label"] === "string" &&
+      (option["description"] === undefined || typeof option["description"] === "string")
+    );
+  });
+}
+
+function stringFromValue(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function numberFromValue(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function booleanFromValue(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
+function recordFromValue(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function decisionTypeFromValue(value: unknown): Decision["type"] {
+  if (
+    value === "product_choice" ||
+    value === "visual_approval" ||
+    value === "scope_change" ||
+    value === "risk_waiver" ||
+    value === "merge_approval" ||
+    value === "deployment_approval"
+  ) {
+    return value;
+  }
+  return null;
 }

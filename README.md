@@ -1,8 +1,10 @@
 # ardex
 
-Local control plane for Codex work.
+Local autonomy control plane for Codex work.
 
-Ardex installs a local CLI, Codex skill, hooks, SQLite state, and a dashboard served on `127.0.0.1`. It is currently Bun-based: npm can install and publish the package, but the `ardex` executable uses `#!/usr/bin/env bun`, so Bun must be available on machines that run it.
+Ardex lets Codex agents run long, parallel workflows while keeping project ownership, approvals, progress, artifacts, and risk visible to humans. It installs a local CLI, Codex skill, hooks, SQLite state, and a dashboard served on `127.0.0.1`.
+
+It is currently Bun-based: npm can install and publish the package, but the `ardex` executable uses `#!/usr/bin/env bun`, so Bun must be available on machines that run it.
 
 ## Quick Start
 
@@ -60,7 +62,7 @@ Open the dashboard:
 open http://127.0.0.1:17373
 ```
 
-Use the dashboard to review project/session state, visible outputs, open asks, scale risk, and VDD scenario approvals. Use the CLI for agent-owned workflow mutations such as task claim, pause/resume, owner assignment, progress, checklist, and done.
+Use the dashboard to review project/session state, visible outputs, decisions, scale risk, and VDD scenario approvals. Use the CLI for agent-owned workflow mutations such as task claim, pause/resume, owner assignment, progress, checklist, and done.
 
 Common CLI flow:
 
@@ -171,6 +173,29 @@ curl -N 'http://127.0.0.1:17373/events?project=p_001'
 
 The daemon serves a local dashboard, JSON dashboard snapshots, and SSE updates. The UI can answer open asks and accept or reject candidate evidence.
 
+## Phase A Autonomy Primitives
+
+Phase A adds visibility and control-plane records for agent work. It records `AgentRun`, `AgentAction`, and Decision Queue state through CLI/API/dashboard surfaces. It does not make the daemon spawn Codex subagents, create worktrees, merge patches, or run unattended swarms; Codex still launches and coordinates subagents outside the daemon while Ardex tracks what is happening.
+
+```bash
+bun run index.ts -p p_001 agent-run start --task t_001 --owner subagent:docs --model gpt-5 --json
+bun run index.ts -p p_001 agent-run ls --status running --json
+bun run index.ts -p p_001 agent-run heartbeat <run_id> --status running --json
+bun run index.ts -p p_001 agent-run done <run_id> --summary "Docs complete" --json
+bun run index.ts -p p_001 agent-run fail <run_id> --reason "Blocked by missing API contract" --json
+
+bun run index.ts -p p_001 agent-action add --run <run_id> --type file --summary "Update API docs" --payload '{"file":"docs/API.md","progress":0.4}' --json
+bun run index.ts -p p_001 agent-action ls --run <run_id> --json
+bun run index.ts -p p_001 agent-action end <action_id> --status completed --json
+
+bun run index.ts -p p_001 decision ls --status open --json
+bun run index.ts -p p_001 decision add --task t_001 --run <run_id> --question "Expand API docs?" --option approve:"Document contract" --option reject:"Keep roadmap only" --priority 1 --json
+bun run index.ts -p p_001 decision <decision_id> answer approve --json
+bun run index.ts -p p_001 decision <decision_id> dismiss --json
+```
+
+Use agent runs for leased work, agent actions for readable timeline chapters, and decisions for approvals or choices that should block only the affected task/run.
+
 ## Production Harness Features
 
 `ardex init` installs:
@@ -206,12 +231,14 @@ Autonomous workflow controls now also include:
 - task pause/resume/delete/owner assignment with runtime and event history
 - ask answer resume markers through `statement.nextExpectedAction`
 - lightweight checklist before `task done`
-- VDD visual scenario gate: `qualityGate=visual` and UX-impactful tasks must create a scenario prompt, attach an imagegen `generated_image` candidate with `kind=visual_scenario_confirm`, and get dashboard approval before implementation claim/done
+- VDD visual scenario gate: `qualityGate=visual` or an explicit visual approval/checkpoint request must create a scenario prompt, attach a candidate output with `kind=visual_scenario_confirm`, and get dashboard approval before implementation claim/done. Generic UI/UX/frontend/dashboard/CSS wording alone is advisory and does not force imagegen.
 - scale-based child task generation with unique `subagent:<role>` owners and prompt-time delegation guidance
 - dashboard output panel for generated images, screenshots, prototypes, URLs, browser diffs, and pending visual scenario approvals with review comments
 - session workflow sync on `statement`, scale, ask answer, claim, progress, pause/resume, delete, and done events so stale `planning` state is corrected before Codex plans
 - agent activity derived from session `lastSeenAt` and surfaced in CLI/API/dashboard as `running` or `idle`
 - sticky dashboard session strip with agent state, session status, goal, current task, and runtime visible while scrolling
+
+The next autonomy layer is specified around `AgentRun`, `AgentAction`, `Decision Queue`, autonomy budgets, async gates, and a control-room dashboard. Gates should not kill autonomy: missing scale should trigger an automatic scale check, missing visual approval should create a candidate output and wait while independent tasks continue, and open decisions should block only affected work.
 
 API contract: [docs/API.md](docs/API.md)
 

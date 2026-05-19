@@ -73,6 +73,55 @@ export type TaskSummary = {
   checklistPassed: boolean;
 };
 
+export type AgentRunSummary = {
+  id: string;
+  sessionId: string | null;
+  sessionRef: string | null;
+  taskId: string | null;
+  taskRef: string | null;
+  owner: string;
+  role: string;
+  status: string;
+  pid: number | null;
+  worktreePath: string | null;
+  branchName: string | null;
+  model: string | null;
+  autonomyBudget: Record<string, unknown>;
+  goal: string;
+  summary: string;
+  metadata: Record<string, unknown>;
+  startedAt: string | null;
+  lastSeenAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AgentActionSummary = {
+  id: string;
+  sessionId: string | null;
+  sessionRef: string | null;
+  runId: string;
+  runRef: string | null;
+  taskId: string | null;
+  taskRef: string | null;
+  sequence: number;
+  type: string | null;
+  kind: string | null;
+  status: string;
+  title: string;
+  summary: string;
+  payload: Record<string, unknown>;
+  currentFile: string | null;
+  command: string | null;
+  progress: number | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type OutputSummary = {
   id: string;
   type: string;
@@ -95,6 +144,42 @@ export type OutputSummary = {
   reviewComment: string | null;
   needsApproval: boolean;
   createdAt: string;
+};
+
+export type DecisionOptionSummary = {
+  id: string;
+  label: string;
+  description: string | null;
+  consequence: string | null;
+};
+
+export type DecisionSummary = {
+  id: string;
+  sessionId: string | null;
+  sessionRef: string | null;
+  taskId: string | null;
+  taskRef: string | null;
+  runId: string | null;
+  runRef: string | null;
+  actionId: string | null;
+  type: string | null;
+  priority: number;
+  agentRunId: string | null;
+  agentRunRef: string | null;
+  question: string;
+  context: string;
+  options: DecisionOptionSummary[];
+  recommendedOption: string | null;
+  required: boolean;
+  status: string;
+  answer: string | null;
+  dismissedReason: string | null;
+  resolvedBy: string | null;
+  resolvedAt: string | null;
+  answeredAt: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type EvidenceSummary = {
@@ -156,6 +241,9 @@ export type DashboardSnapshot = {
   statement: Statement | null;
   sessions: SessionSummary[];
   tasks: TaskSummary[];
+  agentRuns: AgentRunSummary[];
+  agentActions: AgentActionSummary[];
+  decisions: DecisionSummary[];
   evidence: EvidenceSummary[];
   outputs: OutputSummary[];
   asks: AskSummary[];
