@@ -231,7 +231,7 @@ Autonomous workflow controls now also include:
 - task pause/resume/delete/owner assignment with runtime and event history
 - ask answer resume markers through `statement.nextExpectedAction`
 - lightweight checklist before `task done`
-- VDD visual scenario gate: `qualityGate=visual` and UX-impactful tasks must create a scenario prompt, attach an imagegen `generated_image` candidate with `kind=visual_scenario_confirm`, and get dashboard approval before implementation claim/done
+- VDD visual scenario gate: `qualityGate=visual` or an explicit visual approval/checkpoint request must create a scenario prompt, attach a candidate output with `kind=visual_scenario_confirm`, and get dashboard approval before implementation claim/done. Generic UI/UX/frontend/dashboard/CSS wording alone is advisory and does not force imagegen.
 - scale-based child task generation with unique `subagent:<role>` owners and prompt-time delegation guidance
 - dashboard output panel for generated images, screenshots, prototypes, URLs, browser diffs, and pending visual scenario approvals with review comments
 - session workflow sync on `statement`, scale, ask answer, claim, progress, pause/resume, delete, and done events so stale `planning` state is corrected before Codex plans

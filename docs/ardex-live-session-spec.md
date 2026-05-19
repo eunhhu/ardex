@@ -1671,7 +1671,7 @@ Required artifacts for UI work:
 Visual quality gate:
 
 1. VDD is a direction thumbnail, not a global stop sign.
-2. Before implementation of visual or UX-impactful work, generate a scenario prompt and candidate output.
+2. Before implementation, generate a scenario prompt and candidate output only when `quality_gate=visual`, the user explicitly requests VDD/visual approval, or a visual direction decision is materially risky.
 3. Dashboard shows the candidate output as a pending decision.
 4. Approval unblocks that task/run; rejection routes the comment back into the task.
 5. Independent non-conflicting tasks may continue while the visual decision is open.
@@ -1720,7 +1720,7 @@ Default mapping:
 
 1. Roadmap/planning: `scale`.
 2. Backend code: `test`.
-3. Frontend UI: `visual`.
+3. Frontend UI: `visual` only when visual direction or approval is a core deliverable; otherwise use `test` or `review`.
 4. Docs/spec: `review`.
 5. Generated asset: `visual`.
 6. Release/PR: `demo`.
@@ -2260,7 +2260,7 @@ Phase B: Autonomous Single Task
 1. Add task autopilot mode.
 2. Add autonomy budget per session/task/run.
 3. Run scale check automatically when missing.
-4. Generate visual scenario candidates automatically for visual/UX tasks.
+4. Generate visual scenario candidates automatically for explicit visual gates or visual approval checkpoints, not from broad UI keywords alone.
 5. Run checklist automatically before done.
 6. Block only affected task/run when ask or decision is open.
 

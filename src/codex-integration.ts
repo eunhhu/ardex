@@ -186,7 +186,7 @@ Use Ardex CLI as source of truth for project/session/task state. Prefer stable J
 ## Work Loop
 
 - Before implementation, run \`ardex -p <project> scale check --path <target> --json\`.
-- For \`qualityGate=visual\` or UX-impactful tasks, run \`ardex -p <project> task <task> scenario --json\`, use imagegen to create the scenario image, attach it as candidate \`generated_image\` evidence with \`--kind visual_scenario_confirm\`, and wait for dashboard approval before claiming implementation.
+- Use VDD/imagegen only when \`qualityGate=visual\` or the user/Ardex explicitly asks for a visual scenario, visual approval, or visual direction checkpoint. Generic UI/UX/frontend/dashboard/CSS wording alone is advisory and must not force imagegen. When required, run \`ardex -p <project> task <task> scenario --json\`, attach the candidate output with \`--kind visual_scenario_confirm\`, and wait for dashboard approval before claiming implementation.
 - Claim a task before editing: \`ardex -p <project> task <task> claim --json\`.
 - If a user-paused task exists, do not resume it unless the statement says \`resume:<task_id>\` or the user explicitly asks.
 - Respect task owner. If \`statement.subagents.required\` is true or a task owner starts with \`subagent:\`, treat that as an explicit Ardex delegation request: spawn/use a separate Codex subagent for that task when subagent tools are available. Main context coordinates, integrates, and verifies.
@@ -237,7 +237,7 @@ if (data.session?.status === "implementing" && data.scale?.nextSplitRequired ===
 }
 
 if (data.visualScenario?.required === true && data.visualScenario?.approved !== true && data.currentTask) {
-  output({ decision: "block", reason: "Ardex visual scenario gate requires approved imagegen scenario before implementation can be treated as complete." });
+  output({ decision: "block", reason: "Ardex visual scenario gate requires approval only for explicit visual-gated tasks or explicit visual checkpoints." });
 }
 
 output({ continue: true });
@@ -313,7 +313,7 @@ const lines = [
   "Next: " + (data.nextExpectedAction || "none"),
   "Blockers: " + (Array.isArray(data.blockers) ? data.blockers.length : 0),
   "Mandatory flow: continue from the Ardex session/task above; do not re-plan from scratch unless no session/task exists.",
-  "Rules: check Ardex statement before work; for visual/UX tasks create imagegen scenario and wait for Visible Outputs approval before implementation; claim/resume task before edits; keep task state current; use evidence only for external/user-visible artifacts; run checklist before done.",
+  "Rules: check Ardex statement before work; use VDD/imagegen only for qualityGate=visual or explicit visual scenario/approval checkpoints; generic UI/UX/frontend/dashboard/CSS wording alone is advisory; claim/resume task before edits; keep task state current; use evidence only for external/user-visible artifacts; run checklist before done.",
   "Subagent rule: when Ardex lists pending subagent-owned tasks, treat it as an explicit delegation request; spawn one bounded subagent per task when available, and keep main context for coordination/integration.",
   "Continuation rule: if Next starts with spawn_subagent:, spawn that subagent immediately instead of asking the user what to do next."
 ];
