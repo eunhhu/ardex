@@ -3,7 +3,7 @@
 Daemon binds to `127.0.0.1` by default. Responses use one envelope:
 
 ```json
-{ "ok": true, "data": {}, "meta": { "surface": "dashboard", "version": "0.1.4" } }
+{ "ok": true, "data": {}, "meta": { "surface": "dashboard", "version": "0.1.5" } }
 ```
 
 Errors use:
@@ -12,7 +12,7 @@ Errors use:
 {
   "ok": false,
   "error": { "code": "VALIDATION_ERROR", "message": "Field title is required.", "details": {} },
-  "meta": { "surface": "dashboard", "version": "0.1.4" }
+  "meta": { "surface": "dashboard", "version": "0.1.5" }
 }
 ```
 

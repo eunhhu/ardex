@@ -970,7 +970,7 @@ Success envelope:
     "command": "task.done",
     "projectId": "p_001",
     "sessionId": "s_001",
-    "version": "0.1.4"
+    "version": "0.1.5"
   }
 }
 ```
@@ -990,7 +990,7 @@ Error envelope:
   },
   "meta": {
     "command": "task.done",
-    "version": "0.1.4"
+    "version": "0.1.5"
   }
 }
 ```
@@ -1008,7 +1008,7 @@ ardex check --json
     "daemon": "running",
     "url": "http://127.0.0.1:17373",
     "dbPath": "/Users/me/.ardex/ardex.db",
-    "version": "0.1.4"
+    "version": "0.1.5"
   }
 }
 ```
