@@ -1,8 +1,10 @@
 # ardex
 
-Local control plane for Codex work.
+Local autonomy control plane for Codex work.
 
-Ardex installs a local CLI, Codex skill, hooks, SQLite state, and a dashboard served on `127.0.0.1`. It is currently Bun-based: npm can install and publish the package, but the `ardex` executable uses `#!/usr/bin/env bun`, so Bun must be available on machines that run it.
+Ardex lets Codex agents run long, parallel workflows while keeping project ownership, approvals, progress, artifacts, and risk visible to humans. It installs a local CLI, Codex skill, hooks, SQLite state, and a dashboard served on `127.0.0.1`.
+
+It is currently Bun-based: npm can install and publish the package, but the `ardex` executable uses `#!/usr/bin/env bun`, so Bun must be available on machines that run it.
 
 ## Quick Start
 
@@ -60,7 +62,7 @@ Open the dashboard:
 open http://127.0.0.1:17373
 ```
 
-Use the dashboard to review project/session state, visible outputs, open asks, scale risk, and VDD scenario approvals. Use the CLI for agent-owned workflow mutations such as task claim, pause/resume, owner assignment, progress, checklist, and done.
+Use the dashboard to review project/session state, visible outputs, decisions, scale risk, and VDD scenario approvals. Use the CLI for agent-owned workflow mutations such as task claim, pause/resume, owner assignment, progress, checklist, and done.
 
 Common CLI flow:
 
@@ -212,6 +214,8 @@ Autonomous workflow controls now also include:
 - session workflow sync on `statement`, scale, ask answer, claim, progress, pause/resume, delete, and done events so stale `planning` state is corrected before Codex plans
 - agent activity derived from session `lastSeenAt` and surfaced in CLI/API/dashboard as `running` or `idle`
 - sticky dashboard session strip with agent state, session status, goal, current task, and runtime visible while scrolling
+
+The next autonomy layer is specified around `AgentRun`, `AgentAction`, `Decision Queue`, autonomy budgets, async gates, and a control-room dashboard. Gates should not kill autonomy: missing scale should trigger an automatic scale check, missing visual approval should create a candidate output and wait while independent tasks continue, and open decisions should block only affected work.
 
 API contract: [docs/API.md](docs/API.md)
 

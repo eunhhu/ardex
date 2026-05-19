@@ -2,9 +2,11 @@
 
 ## 1. Product Intent
 
-Ardex is a local control plane for Codex work.
+Ardex is a local autonomy control plane for Codex.
 
-Goal: make Codex work visible, consistent, and quality-gated across long sessions, multiple threads, and subagents.
+Goal: let Codex agents run long, parallel workflows while keeping project ownership, approvals, progress, artifacts, and risk visible to humans.
+
+Plain definition: Ardex is not only a task board and not only a proof log. It is the local layer that turns Codex work into observable, bounded, resumable agent operations.
 
 Ardex should not rely on instructions alone. It should enforce missing workflow control through local state, CLI commands, web UI, task state machines, and project-level defaults. It must not duplicate Codex-native command logs, file diffs, or test transcripts.
 
@@ -29,6 +31,9 @@ Ardex should not rely on instructions alone. It should enforce missing workflow 
 7. Subagent-friendly: tasks can be split into bounded ownership units with independent context.
 8. Quality over activity: progress is based on task state, scale discipline, user decisions, and blockers, not token volume.
 9. Scale-aware: work is sized before execution so tasks, files, and agent assignments stay balanced.
+10. Gate as safety belt: missing prerequisites should trigger the next safe action, not freeze unrelated work.
+11. Agent-action visibility: users need to see what agents are doing now, not only what tasks exist.
+12. Human decision ownership: important product, visual, risk, merge, and deploy choices must be collected into a clear decision queue.
 
 ## 4. Non-Goals
 
@@ -46,6 +51,10 @@ Ardex has four parts:
 2. Local daemon: HTTP/WebSocket server started by `ardex start`.
 3. Local storage: SQLite database and artifacts under `~/.ardex`.
 4. Codex integration: installs an Ardex skill into `.agents/skills`, optional Codex hooks into `.codex/hooks.json`, and optional custom agent profiles into `.codex/agents`.
+
+Autonomous Ardex adds a fifth part:
+
+5. Agent scheduler: leases tasks, records `AgentRun`/`AgentAction`, manages budgets, tracks heartbeats, prepares merge/review queues, and surfaces human decisions.
 
 Recommended MVP stack:
 
@@ -258,6 +267,86 @@ Fields:
 8. `status`: `open | answered | dismissed`.
 9. `created_at`, `answered_at`.
 
+### Decision
+
+Human decision queue item.
+
+Decisions are stronger than plain asks. They represent moments where the human keeps ownership without manually approving every action.
+
+Fields:
+
+1. `id`.
+2. `project_id`.
+3. `session_id`.
+4. `task_id`: nullable.
+5. `agent_run_id`: nullable.
+6. `type`: `product_choice | visual_approval | scope_change | risk_waiver | merge_approval | deployment_approval`.
+7. `question`.
+8. `options`: array of `{ id, label, consequence }`.
+9. `recommended_option`: nullable option id.
+10. `required`: boolean.
+11. `status`: `open | answered | dismissed`.
+12. `answer`: nullable option id or text.
+13. `created_at`, `answered_at`.
+
+### Agent Run
+
+Agent execution unit.
+
+Tasks describe what should be done. Agent runs describe who is actively executing work, in what workspace, with which budget.
+
+Fields:
+
+1. `id`.
+2. `project_id`.
+3. `session_id`.
+4. `task_id`: nullable.
+5. `owner`: `main | subagent:<role>`.
+6. `status`: `queued | running | blocked | merging | verifying | done | failed`.
+7. `pid`: nullable process id.
+8. `worktree_path`: nullable absolute path.
+9. `branch_name`: nullable branch.
+10. `model`: nullable model label.
+11. `autonomy_budget`: JSON object.
+12. `started_at`, `last_seen_at`, `completed_at`.
+
+Budget fields:
+
+1. `maxMinutes`.
+2. `maxToolCalls`.
+3. `maxFilesChanged`.
+4. `maxDiffLines`.
+5. `allowedPaths`.
+6. `forbiddenCommands`.
+7. `requiresApproval`.
+8. `mergePolicy`.
+
+### Agent Action
+
+Agent action timeline item.
+
+Agent actions are human-readable chapters, not raw terminal logs. They let the dashboard show "worker-2 is editing VisibleOutputsPanel" instead of "AI is running".
+
+Fields:
+
+1. `id`.
+2. `project_id`.
+3. `session_id`.
+4. `run_id`.
+5. `task_id`: nullable.
+6. `kind`: `planning | reading | editing | running_command | testing | generating_output | asking_user | waiting_approval | merging | reviewing`.
+7. `summary`.
+8. `current_file`: nullable path.
+9. `command`: nullable redacted command summary.
+10. `progress`: nullable float `0..1`.
+11. `started_at`, `ended_at`.
+
+### Checkpoint
+
+Intervention point.
+
+Checkpoints are produced by gates, budget limits, scale risks, visual direction changes, merge conflicts, or failing final checks. A checkpoint may create a decision, pause an agent run, or route independent work elsewhere.
+
 ### Scale Estimate
 
 Represents predicted work size before implementation.
@@ -338,7 +427,7 @@ CREATE TABLE projects (
   name TEXT NOT NULL,
   codex_project_key TEXT,
   default_workflow TEXT NOT NULL DEFAULT 'sdd_vdd'
-    CHECK (default_workflow IN ('normal', 'sdd', 'vdd', 'sdd_vdd')),
+    CHECK (default_workflow IN ('normal', 'sdd', 'vdd', 'sdd_vdd', 'autopilot', 'session_autopilot', 'swarm', 'review', 'fix_ci')),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -383,7 +472,7 @@ CREATE TABLE sessions (
   current_task_id TEXT,
   goal TEXT,
   mode TEXT NOT NULL DEFAULT 'sdd_vdd'
-    CHECK (mode IN ('normal', 'sdd', 'vdd', 'sdd_vdd', 'review', 'fix_ci')),
+    CHECK (mode IN ('normal', 'sdd', 'vdd', 'sdd_vdd', 'autopilot', 'session_autopilot', 'swarm', 'review', 'fix_ci')),
   model TEXT,
   next_expected_action TEXT,
   started_at TEXT NOT NULL,
@@ -447,6 +536,62 @@ CREATE TABLE asks (
   answered_at TEXT
 );
 
+CREATE TABLE agent_runs (
+  id TEXT PRIMARY KEY,
+  alias TEXT NOT NULL UNIQUE,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+  owner TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued'
+    CHECK (status IN ('queued', 'running', 'blocked', 'merging', 'verifying', 'done', 'failed')),
+  pid INTEGER,
+  worktree_path TEXT,
+  branch_name TEXT,
+  model TEXT,
+  autonomy_budget_json TEXT NOT NULL DEFAULT '{}',
+  started_at TEXT,
+  last_seen_at TEXT NOT NULL,
+  completed_at TEXT
+);
+
+CREATE TABLE agent_actions (
+  id TEXT PRIMARY KEY,
+  alias TEXT NOT NULL UNIQUE,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  run_id TEXT NOT NULL REFERENCES agent_runs(id) ON DELETE CASCADE,
+  task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+  kind TEXT NOT NULL
+    CHECK (kind IN ('planning', 'reading', 'editing', 'running_command', 'testing', 'generating_output', 'asking_user', 'waiting_approval', 'merging', 'reviewing')),
+  summary TEXT NOT NULL,
+  current_file TEXT,
+  command TEXT,
+  progress REAL CHECK (progress IS NULL OR (progress >= 0 AND progress <= 1)),
+  started_at TEXT NOT NULL,
+  ended_at TEXT
+);
+
+CREATE TABLE decisions (
+  id TEXT PRIMARY KEY,
+  alias TEXT NOT NULL UNIQUE,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+  agent_run_id TEXT REFERENCES agent_runs(id) ON DELETE SET NULL,
+  type TEXT NOT NULL
+    CHECK (type IN ('product_choice', 'visual_approval', 'scope_change', 'risk_waiver', 'merge_approval', 'deployment_approval')),
+  question TEXT NOT NULL,
+  options_json TEXT NOT NULL DEFAULT '[]',
+  recommended_option TEXT,
+  required INTEGER NOT NULL DEFAULT 1 CHECK (required IN (0, 1)),
+  status TEXT NOT NULL DEFAULT 'open'
+    CHECK (status IN ('open', 'answered', 'dismissed')),
+  answer TEXT,
+  created_at TEXT NOT NULL,
+  answered_at TEXT
+);
+
 CREATE TABLE scale_estimates (
   id TEXT PRIMARY KEY,
   alias TEXT NOT NULL UNIQUE,
@@ -489,6 +634,9 @@ CREATE INDEX idx_acceptance_feature_status ON acceptance_criteria(feature_id, st
 CREATE INDEX idx_tasks_project_status_priority ON tasks(project_id, status, priority);
 CREATE INDEX idx_evidence_target ON evidence(target_type, target_id, type);
 CREATE INDEX idx_asks_project_status ON asks(project_id, status);
+CREATE INDEX idx_agent_runs_session_status ON agent_runs(session_id, status);
+CREATE INDEX idx_agent_actions_run_started ON agent_actions(run_id, started_at);
+CREATE INDEX idx_decisions_project_status ON decisions(project_id, status);
 CREATE INDEX idx_scale_estimates_target ON scale_estimates(target_type, target_id);
 CREATE INDEX idx_file_scale_findings_project_path ON file_scale_findings(project_id, path);
 ```
@@ -500,6 +648,9 @@ Integrity rules:
 3. Evidence target integrity is checked in application code because `target_id` can reference multiple tables or a file path.
 4. Waivers become stale when `line_count`, `byte_count`, `mtime_ms`, or `content_hash` differs from the stored waiver values.
 5. Session deletion does not delete tasks or evidence; project deletion deletes all project-owned rows.
+6. Only one non-terminal `agent_runs` row may hold a task lease at a time.
+7. `agent_actions` must belong to the same project/session as their parent run.
+8. Decisions tied to failed, done, or deleted runs remain as audit records until answered or dismissed.
 
 ## 8. State Machine
 
@@ -518,13 +669,14 @@ Session transition rules:
 Enforcement:
 
 1. A task cannot be marked `done` with `progress < 1`.
-2. A task with `quality_gate=test` needs test evidence.
-3. A task with `quality_gate=visual` needs screenshot or URL evidence.
-4. A task with `quality_gate=scale` needs scale evidence.
-5. A session cannot enter `implementing` while unsplit work has weight `>13`.
-6. A session cannot enter `implementing` when targeted source files have blocking file scale findings.
-7. A session cannot be `done` while open tasks remain.
-8. A final summary should reference evidence ids.
+2. Quality gate labels route workflow, UI, checklist, and decision behavior. They are not blanket evidence requirements.
+3. A task with `quality_gate=test` should run relevant verification before done. Missing verification produces checklist failure or review warning according to mode.
+4. A task with `quality_gate=visual` should create a scenario candidate before implementation and a visible output after implementation. Missing visual approval blocks only the affected task/run.
+5. A task with `quality_gate=scale` should run scale automatically if no current report exists.
+6. A session cannot enter `implementing` while unsplit work has weight `>13`.
+7. A session cannot enter `implementing` when targeted source files have blocking file scale findings.
+8. A session cannot be `done` while open tasks, open required decisions, or active agent runs remain.
+9. A final summary should reference visible outputs, decisions, and relevant checklist status.
 
 ## 8.1 Session Statement
 
@@ -578,6 +730,44 @@ CLI:
 ardex -p <project_id> statement
 ardex -p <project_id> statement --json
 ardex -p <project_id> statement set next "verify visual output"
+```
+
+## 8.2 Autonomy Levels And Budgets
+
+Autonomy is not a boolean. Ardex must expose how much control the user is granting and what boundary limits the agent.
+
+Levels:
+
+1. Level 0, Observe: Ardex records state and shows the dashboard. Codex moves manually.
+2. Level 1, Guided Task: one task at a time. Agent records claim, progress, checklist, and done.
+3. Level 2, Task Autopilot: one task runs to completion inside budget. Ask, visual approval, scale split, deploy, and destructive checkpoints pause that task.
+4. Level 3, Session Autopilot: the agent claims the next eligible task automatically until session budget is reached.
+5. Level 4, Parallel Autopilot: Ardex coordinates multiple subagent runs and main acts as coordinator, integrator, and reviewer.
+6. Level 5, Unattended Run: Ardex runs within strict budget and leaves summary, decisions, and outputs. Irreversible actions are never automatic.
+
+Session modes:
+
+1. `normal`: user-driven, scale/VDD advisory.
+2. `autopilot`: one task progresses automatically, risk gates required.
+3. `session_autopilot`: task queue auto-claim, independent work continues around blocked tasks.
+4. `swarm`: parallel subagent runs, leases, worktrees, merge queue, and decision queue required.
+5. `review`: verification-first mode.
+6. `fix_ci`: failing checks drive a narrow repair loop.
+
+Budget example:
+
+```json
+{
+  "autonomyLevel": 4,
+  "maxRuntimeMinutes": 90,
+  "maxParallelAgents": 4,
+  "maxFilesChanged": 12,
+  "maxDiffLines": 800,
+  "allowedPaths": ["src", "web", "tests"],
+  "forbiddenCommands": ["rm -rf", "git push", "npm publish"],
+  "requiresApproval": ["deploy", "database_migration", "visual_direction", "large_refactor"],
+  "mergePolicy": "human_approval"
+}
 ```
 
 ## 9. CLI Commands
@@ -753,7 +943,7 @@ Success envelope:
     "command": "task.done",
     "projectId": "p_001",
     "sessionId": "s_001",
-    "version": "0.1.3"
+    "version": "0.1.4"
   }
 }
 ```
@@ -764,16 +954,16 @@ Error envelope:
 {
   "ok": false,
   "error": {
-    "code": "QUALITY_GATE_MISSING_EVIDENCE",
-    "message": "Task requires passing test evidence before done.",
+    "code": "TRANSITION_REJECTED",
+    "message": "Task cannot be marked done while required decisions remain open.",
     "details": {
       "taskId": "t_003",
-      "missing": ["test"]
+      "openDecisionIds": ["d_001"]
     }
   },
   "meta": {
     "command": "task.done",
-    "version": "0.1.3"
+    "version": "0.1.4"
   }
 }
 ```
@@ -791,7 +981,7 @@ ardex check --json
     "daemon": "running",
     "url": "http://127.0.0.1:17373",
     "dbPath": "/Users/me/.ardex/ardex.db",
-    "version": "0.1.3"
+    "version": "0.1.4"
   }
 }
 ```
@@ -938,13 +1128,13 @@ Common error codes:
 
 1. `VALIDATION_ERROR`.
 2. `NOT_FOUND`.
-3. `QUALITY_GATE_MISSING_EVIDENCE`.
-4. `QUALITY_GATE_FAILED_EVIDENCE`.
-5. `TRANSITION_REJECTED`.
-6. `SCALE_BLOCKING_FINDING`.
-7. `SCALE_SPLIT_REQUIRED`.
-8. `STALE_WAIVER`.
-9. `PROJECT_PATH_STALE`.
+3. `TRANSITION_REJECTED`.
+4. `SCALE_BLOCKING_FINDING`.
+5. `SCALE_SPLIT_REQUIRED`.
+6. `STALE_WAIVER`.
+7. `PROJECT_PATH_STALE`.
+8. `DECISION_REQUIRED`.
+9. `BUDGET_EXCEEDED`.
 10. `DAEMON_INTERNAL_ERROR`.
 
 Key request/response contracts:
@@ -998,8 +1188,7 @@ Request:
 
 ```json
 {
-  "evidenceIds": ["e_011"],
-  "waiverIds": []
+  "checklist": true
 }
 ```
 
@@ -1009,11 +1198,11 @@ Rejected response:
 {
   "ok": false,
   "error": {
-    "code": "QUALITY_GATE_MISSING_EVIDENCE",
-    "message": "Task has quality_gate=test but no passing test evidence.",
+    "code": "DECISION_REQUIRED",
+    "message": "Task has required open decisions.",
     "details": {
       "taskId": "t_004",
-      "missing": ["test:pass=true"]
+      "openDecisionIds": ["d_001"]
     }
   }
 }
@@ -1082,6 +1271,9 @@ MVP screens:
 6. Ask inbox: open user questions with attached images/files.
 7. Verification log: collapsed receipt/debug view for screenshots, URLs, command/test summaries, user decisions, and manual QA notes.
 8. Scale map: feature/task weights, oversized files, split recommendations, agent tier suggestions.
+9. Agent grid: main, workers, reviewer, tester, status, current task, current file/command, heartbeat, and budget.
+10. Live timeline: summarized `AgentAction` chapters in time order.
+11. Decision queue: visual approvals, asks, risk waivers, scope choices, merge approvals, and deploy approvals.
 
 UX requirements:
 
@@ -1096,6 +1288,16 @@ UX requirements:
 9. User can approve or waive scale recommendations with a reason.
 10. Realtime refresh must not steal focus from inputs, textareas, selects, project search, or task modal fields.
 11. Meaningless disabled controls are not allowed; controls must either mutate state or be rendered as read-only status.
+12. Raw logs are not the primary UI. Agent actions must be compressed into readable chapters such as `Reading auth flow`, `Editing redirect handler`, `Running unit tests`, `Waiting for visual approval`, or `Merging worker patch`.
+13. A blocked decision must show affected task/run and must not imply unrelated independent work is stopped.
+
+Control-room layout target:
+
+1. Top: live session strip with autonomy mode, running agents, blocked agents, approval queue, and kill switch.
+2. Left: roadmap/task queue with dependency, owner, status, and progress.
+3. Center: live timeline of `AgentAction` chapters.
+4. Right: visible outputs and decisions.
+5. Bottom or separate tab: agent grid for main, worker, reviewer, tester, and integrator runs.
 
 ## 11.1 UI Acceptance Spec
 
@@ -1127,7 +1329,7 @@ Loading states:
 Error states:
 
 1. Daemon unavailable: show command to run `ardex start`.
-2. Gate failure: show exact missing evidence and direct action to add/waive.
+2. Gate failure: show exact affected task/run, the next automatic action, and any decision or waiver needed.
 3. Stale project path: show old path, detected path, and rebind action.
 4. Hook install conflict: show conflicting file and rollback path.
 
@@ -1139,9 +1341,9 @@ Blocked state:
 
 Task done UX:
 
-1. Done button is disabled until required gate evidence exists.
-2. If clicked anyway through direct URL or stale state, API returns `409` and UI shows missing evidence list.
-3. Every done task row shows evidence badges.
+1. Done is agent-owned. The dashboard shows done readiness/checklist state instead of offering casual progress buttons.
+2. If a hard state gate fails through CLI/API, API returns `409` and UI shows affected task/run, next action, and decision/waiver path.
+3. Every done task row shows compact checklist, owner, runtime, and latest visible output when available.
 
 ## 12. Codex Skill Contract
 
@@ -1156,9 +1358,9 @@ Task done UX:
 7. Break work into tasks before implementation.
 8. Claim one active task at a time.
 9. Update task progress after meaningful milestones.
-10. Add evidence after real verification.
-11. Use `ask` when blocked or when UX choice needs user input.
-12. Do not mark task done without evidence.
+10. Add visible output or manual QA note only when the artifact is useful to the human.
+11. Use `ask` or `decision` when blocked or when product/visual/risk choice needs user input.
+12. Do not mark task done when hard state gates or required decisions remain open.
 
 This still uses instructions, but the daemon enforces critical transitions.
 
@@ -1192,6 +1394,8 @@ Default enforcement:
 4. A new source file should target `<=400` lines.
 5. Editing a source file over `1500` lines requires a scale waiver or refactor task.
 6. Adding a feature to an already oversized file should create a split/refactor task first.
+7. Missing scale report in autonomous mode triggers automatic scale check before blocking.
+8. A risky scale result creates split recommendations and decisions instead of stopping unrelated tasks.
 
 Low-model estimator:
 
@@ -1201,6 +1405,14 @@ Low-model estimator:
 4. Produces a JSON report that a stronger model or user can override.
 
 Scale check does not need perfect estimates. It prevents pathological work shape: one huge task, one huge file, or equal agents assigned to unequal scopes.
+
+Autonomous scale output should also identify:
+
+1. Parallelizable groups.
+2. Dependencies between groups.
+3. Suggested subagent roles.
+4. Files or directories each run may edit.
+5. Merge/review order.
 
 ## 12.2 Scale Heuristic v0
 
@@ -1385,6 +1597,12 @@ Flow:
 goal -> scale check -> expected output -> spec -> tasks -> implementation -> verification -> review -> final evidence
 ```
 
+Autonomous variant:
+
+```text
+goal -> automatic scale check -> task graph proposal -> dependency groups -> agent runs -> visible outputs/decisions -> merge/review -> summary
+```
+
 Spec quality gate:
 
 1. At least one user-facing acceptance criterion.
@@ -1411,15 +1629,16 @@ Required artifacts for UI work:
 
 Visual quality gate:
 
-1. Must run local UI or open generated artifact.
-2. Must attach screenshot.
-3. Must note viewport/device used.
-4. Must record defects found and fixed, or explain residual risk.
-5. Must collect user feedback on toy output when the final UX is still ambiguous.
+1. VDD is a direction thumbnail, not a global stop sign.
+2. Before implementation of visual or UX-impactful work, generate a scenario prompt and candidate output.
+3. Dashboard shows the candidate output as a pending decision.
+4. Approval unblocks that task/run; rejection routes the comment back into the task.
+5. Independent non-conflicting tasks may continue while the visual decision is open.
+6. After implementation, attach actual screenshot, prototype, browser diff, or URL and compare it against the approved scenario when useful.
 
 ## 15. Subagent Workflow
 
-Ardex models subagent work as task ownership.
+Ardex models subagent work as task ownership in the current implementation and as `AgentRun` leases in the autonomous scheduler.
 
 Rules:
 
@@ -1432,6 +1651,8 @@ Rules:
 7. `statement.subagents.required` is true when open tasks have `subagent:<role>` owners.
 8. UserPromptSubmit hook context must include pending subagent task ids, roles, status, and instruction to spawn/use one bounded subagent per task when available.
 9. If subagent tools are unavailable, Codex must report that limitation instead of silently doing subagent-owned implementation in the main context.
+10. Autonomous `swarm` mode must create one `AgentRun` per leased subagent task and heartbeat it until done, failed, blocked, or merged.
+11. Role-based owners are preferred over numbered workers: `subagent:ui`, `subagent:api`, `subagent:data`, `subagent:test`, `subagent:reviewer`, `subagent:integrator`.
 
 Task owner examples:
 
@@ -1616,7 +1837,7 @@ MVP decisions:
 2. `ask -a` records an assumed answer with `answer_source=assumed`.
 3. Internal ids use ULID; CLI display uses aliases like `t_001`.
 4. Daemon auto-start is enabled for most commands; `--no-start` disables it.
-5. Quality gates are hard fail by default.
+5. Quality gate labels are advisory in manual mode, hard checkpoints in autonomous mode, and async checkpoints in parallel mode.
 6. Line-count thresholds have global defaults and project overrides.
 7. Scale waivers become stale when target file metadata or hash changes.
 
@@ -1647,12 +1868,13 @@ Task priority:
 1. Moving a task to priority `2` shifts existing priority `2+` tasks down.
 2. No duplicate `(project_id, priority)` remains after transaction.
 
-Gate failure:
+Gate behavior:
 
-1. `quality_gate=test` task cannot be done without passing test evidence.
-2. `pass=false` test evidence does not satisfy the test gate.
-3. Visual gate requires screenshot or URL evidence.
-4. Session done fails with open tasks, open asks, or missing final evidence.
+1. Missing scale report triggers automatic scale check before blocking.
+2. Risky scale report creates split recommendation or waiver decision.
+3. Missing visual approval creates a scenario candidate and decision, then blocks only the affected task/run.
+4. Open ask or decision blocks only the targeted task/run when independent work exists.
+5. Session done fails with open tasks, required open decisions, active runs, or hard scale blocks.
 
 Scale blocking:
 
@@ -1775,6 +1997,81 @@ Task owner is a first-class routing hint:
 
 Dashboard must show owner on every task. Owner reassignment is CLI/API controlled so Codex or scale split can route work without turning the user dashboard into an agent control panel. Scale recommendations may set owner automatically when generating split tasks.
 
+### Agent Runs And Action Timeline
+
+Task state is not enough for a real control plane. Ardex must record live agent execution as first-class state:
+
+1. `agent_runs` represent main or subagent execution units.
+2. Each active run has owner, status, optional pid, worktree, branch, model, task lease, budget, and heartbeat.
+3. `agent_actions` are readable chapters for planning, reading, editing, testing, generating outputs, waiting approval, merging, and reviewing.
+4. Dashboard timeline renders actions, not raw logs.
+5. Agent grid shows each run's current task, file, command summary, heartbeat, status, and budget.
+
+Examples:
+
+1. `worker-ui editing web/src/components/VisibleOutputsPanel.tsx`.
+2. `main reviewing worker-api patch`.
+3. `test-agent fixing 2 failing tests`.
+4. `ui-agent waiting for visual approval`.
+5. `data-agent blocked on migration decision`.
+
+### Decision Queue
+
+Open asks, visual approvals, scale waivers, merge approvals, deploy approvals, and scope choices must be unified as decisions.
+
+Decision queue entries must show:
+
+1. Type.
+2. Affected task/run.
+3. Question.
+4. Options and consequences.
+5. Recommended option.
+6. Whether it is required.
+7. Status and answer.
+
+Decisions that should enter the queue:
+
+1. Visual direction approval.
+2. Ambiguous product choice.
+3. Destructive file operation.
+4. Dependency add.
+5. Database migration.
+6. API contract change.
+7. Large refactor.
+8. Deploy or publish.
+9. Task scope expansion.
+10. Scale waiver.
+11. Merge conflict policy.
+12. Failing test waiver.
+
+### Async Gate Behavior
+
+Autonomous gates should create the next safe action.
+
+Rules:
+
+1. No scale report: run scale automatically, publish result, continue if clear.
+2. Scale risky: propose split or waiver, create decision, keep independent work running.
+3. No visual approval: create scenario prompt and candidate output, create decision, block affected task only.
+4. Open ask: mark affected task/run blocked and keep unrelated task groups eligible.
+5. Final checklist failure: create action chapter and route the failed item to the owner.
+6. Deploy, publish, migration, destructive operations, and irreversible actions always require explicit decision approval.
+
+### Parallel Run Manager
+
+`swarm` mode requires daemon-side orchestration, not only prompt instructions.
+
+Required capabilities:
+
+1. Task leases with heartbeat and timeout.
+2. Isolated workspace or patch sandbox per run.
+3. Allowed file scope per run.
+4. Patch/output submission per run.
+5. Merge queue ordered by dependency and conflict risk.
+6. Conflict detection and decision generation.
+7. Reviewer pass after merge.
+8. Test pass after merge.
+
 ### Ask Answer Resume Loop
 
 When an ask is answered:
@@ -1805,8 +2102,9 @@ Scale reports must drive planning, not only blocking.
 1. Weight `>13`, `recommendedAgent=split`, or blocking source files create split recommendations.
 2. `scale split --task <id>` creates child tasks with balanced estimated weights.
 3. Generated child tasks inherit quality gate, acceptance context, and priority order.
-4. Child owners are assigned to unique roles such as `subagent:worker-1`, `subagent:worker-2`, and remain bounded to their generated slice. Main context owns integration/review.
+4. Child owners are assigned to role-based owners such as `subagent:ui`, `subagent:api`, `subagent:data`, `subagent:test`, `subagent:reviewer`, and remain bounded to their generated slice. Main context owns coordination until an integrator run is created.
 5. The dashboard shows roadmap imbalance and owner distribution before implementation starts.
+6. Scale output should identify dependency order, parallel groups, allowed paths, and merge/review order.
 
 ### Production Checklist
 
@@ -1819,6 +2117,17 @@ Before `task done`, Ardex runs a deterministic checklist:
 5. `quality_gate` is shown as an advisory label, not an evidence requirement.
 
 The checklist is returned by `task <id> checklist --json`, shown in the dashboard, and stored as a `checklist` task event when `done` is attempted.
+
+### Foundational Hardening Backlog
+
+These items remain required before unattended or swarm mode can be considered production-grade:
+
+1. Keep CLI/package output version aligned with `package.json`.
+2. Prevent scale paths from scanning outside the project root.
+3. Add stale PID kill safety for daemon restart.
+4. Add `ardex doctor` for install, hook, daemon, DB, project, and permission diagnostics.
+5. Add task timeline and agent action timeline to the dashboard.
+6. Add budget enforcement for files changed, diff lines, runtime, commands, and allowed paths.
 
 ## 23. First Implementation Plan
 
@@ -1882,3 +2191,49 @@ Phase 7: Autonomous production harness
 5. Add optional SDD/VDD artifact display and lightweight production checklist.
 6. Add scale split to roadmap tasks with owner routing.
 7. Add generated image/scenario output panels to dashboard.
+
+## 24. Autonomy Control Plane Roadmap
+
+The next roadmap replaces "more gates" with observable autonomy.
+
+Phase A: Visibility Core
+
+1. Add `AgentRun` storage, APIs, CLI, and heartbeat.
+2. Add `AgentAction` storage, APIs, CLI, and live timeline.
+3. Add `Decision Queue` storage and APIs.
+4. Add dashboard agent grid.
+5. Add control-room layout for session strip, roadmap, timeline, outputs, and decisions.
+
+Phase B: Autonomous Single Task
+
+1. Add task autopilot mode.
+2. Add autonomy budget per session/task/run.
+3. Run scale check automatically when missing.
+4. Generate visual scenario candidates automatically for visual/UX tasks.
+5. Run checklist automatically before done.
+6. Block only affected task/run when ask or decision is open.
+
+Phase C: Session Autopilot
+
+1. Auto-claim next eligible task.
+2. Continue independent tasks while other tasks wait for decisions.
+3. Enforce session budget.
+4. Add pause, resume, abort, and kill-switch controls.
+5. Show progress chapters in the live timeline.
+
+Phase D: Parallel Swarm
+
+1. Spawn subagent runs from split tasks.
+2. Create isolated worktrees or patch sandboxes.
+3. Enforce task leases and allowed paths.
+4. Collect patches and visible outputs per run.
+5. Add merge queue and conflict detection.
+6. Add reviewer and test agent passes.
+
+Phase E: Human Control Layer
+
+1. Finish decision queue UX.
+2. Add approval policies by autonomy level and operation type.
+3. Add risk levels and budget warnings.
+4. Add audit/replay for runs, actions, decisions, outputs, and merges.
+5. Add watch-mode dashboard for long unattended runs.
