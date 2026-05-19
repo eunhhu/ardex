@@ -173,6 +173,29 @@ curl -N 'http://127.0.0.1:17373/events?project=p_001'
 
 The daemon serves a local dashboard, JSON dashboard snapshots, and SSE updates. The UI can answer open asks and accept or reject candidate evidence.
 
+## Phase A Autonomy Primitives
+
+Phase A adds visibility and control-plane records for agent work. It records `AgentRun`, `AgentAction`, and Decision Queue state through CLI/API/dashboard surfaces. It does not make the daemon spawn Codex subagents, create worktrees, merge patches, or run unattended swarms; Codex still launches and coordinates subagents outside the daemon while Ardex tracks what is happening.
+
+```bash
+bun run index.ts -p p_001 agent-run start --task t_001 --owner subagent:docs --model gpt-5 --json
+bun run index.ts -p p_001 agent-run ls --status running --json
+bun run index.ts -p p_001 agent-run heartbeat <run_id> --status running --json
+bun run index.ts -p p_001 agent-run done <run_id> --summary "Docs complete" --json
+bun run index.ts -p p_001 agent-run fail <run_id> --reason "Blocked by missing API contract" --json
+
+bun run index.ts -p p_001 agent-action add --run <run_id> --type file --summary "Update API docs" --payload '{"file":"docs/API.md","progress":0.4}' --json
+bun run index.ts -p p_001 agent-action ls --run <run_id> --json
+bun run index.ts -p p_001 agent-action end <action_id> --status completed --json
+
+bun run index.ts -p p_001 decision ls --status open --json
+bun run index.ts -p p_001 decision add --task t_001 --run <run_id> --question "Expand API docs?" --option approve:"Document contract" --option reject:"Keep roadmap only" --priority 1 --json
+bun run index.ts -p p_001 decision <decision_id> answer approve --json
+bun run index.ts -p p_001 decision <decision_id> dismiss --json
+```
+
+Use agent runs for leased work, agent actions for readable timeline chapters, and decisions for approvals or choices that should block only the affected task/run.
+
 ## Production Harness Features
 
 `ardex init` installs:

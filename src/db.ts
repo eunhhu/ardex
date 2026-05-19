@@ -7,7 +7,7 @@ type Migration = {
   sql: string;
 };
 
-export const LATEST_SCHEMA_VERSION = 4;
+export const LATEST_SCHEMA_VERSION = 6;
 
 const migrations: Migration[] = [
   {
@@ -292,6 +292,222 @@ const migrations: Migration[] = [
     sql: `
       ALTER TABLE projects ADD COLUMN archived_at TEXT;
       CREATE INDEX IF NOT EXISTS idx_projects_archived_path ON projects(archived_at, path);
+    `,
+  },
+  {
+    version: 5,
+    name: "agent_runs_actions_decisions",
+    sql: `
+      CREATE TABLE IF NOT EXISTS agent_runs (
+        id TEXT PRIMARY KEY,
+        alias TEXT NOT NULL UNIQUE,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+        task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+        agent_role TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'queued'
+          CHECK (status IN ('queued', 'running', 'blocked', 'merging', 'verifying', 'completed', 'failed', 'cancelled')),
+        goal TEXT NOT NULL,
+        summary TEXT NOT NULL DEFAULT '',
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        started_at TEXT,
+        completed_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS agent_actions (
+        id TEXT PRIMARY KEY,
+        alias TEXT NOT NULL UNIQUE,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+        task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+        run_id TEXT NOT NULL REFERENCES agent_runs(id) ON DELETE CASCADE,
+        sequence INTEGER NOT NULL CHECK (sequence >= 1),
+        type TEXT NOT NULL CHECK (
+          type IN (
+            'note', 'command', 'file', 'decision', 'status', 'error',
+            'planning', 'reading', 'editing', 'running_command', 'testing',
+            'generating_output', 'asking_user', 'waiting_approval', 'merging', 'reviewing'
+          )
+        ),
+        status TEXT NOT NULL DEFAULT 'completed'
+          CHECK (status IN ('pending', 'running', 'completed', 'failed', 'skipped')),
+        title TEXT NOT NULL,
+        summary TEXT NOT NULL DEFAULT '',
+        payload_json TEXT NOT NULL DEFAULT '{}',
+        started_at TEXT,
+        completed_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE (run_id, sequence)
+      );
+
+      CREATE TABLE IF NOT EXISTS decisions (
+        id TEXT PRIMARY KEY,
+        alias TEXT NOT NULL UNIQUE,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+        task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+        run_id TEXT REFERENCES agent_runs(id) ON DELETE SET NULL,
+        action_id TEXT REFERENCES agent_actions(id) ON DELETE SET NULL,
+        status TEXT NOT NULL DEFAULT 'open'
+          CHECK (status IN ('open', 'answered', 'dismissed')),
+        priority INTEGER NOT NULL DEFAULT 0,
+        question TEXT NOT NULL,
+        context TEXT NOT NULL DEFAULT '',
+        options_json TEXT NOT NULL DEFAULT '[]',
+        answer TEXT,
+        dismissed_reason TEXT,
+        resolved_by TEXT,
+        resolved_at TEXT,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_agent_runs_project_status ON agent_runs(project_id, status, created_at);
+      CREATE INDEX IF NOT EXISTS idx_agent_runs_task_created ON agent_runs(task_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_agent_runs_session_created ON agent_runs(session_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_agent_actions_run_sequence ON agent_actions(run_id, sequence);
+      CREATE INDEX IF NOT EXISTS idx_agent_actions_project_created ON agent_actions(project_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_agent_actions_task_created ON agent_actions(task_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_decisions_project_status_priority ON decisions(project_id, status, priority, created_at);
+      CREATE INDEX IF NOT EXISTS idx_decisions_task_status ON decisions(task_id, status, created_at);
+      CREATE INDEX IF NOT EXISTS idx_decisions_run_status ON decisions(run_id, status, created_at);
+      CREATE INDEX IF NOT EXISTS idx_decisions_action ON decisions(action_id);
+    `,
+  },
+  {
+    version: 6,
+    name: "autonomy_constraint_refresh",
+    sql: `
+      DROP INDEX IF EXISTS idx_agent_runs_project_status;
+      DROP INDEX IF EXISTS idx_agent_runs_task_created;
+      DROP INDEX IF EXISTS idx_agent_runs_session_created;
+      DROP INDEX IF EXISTS idx_agent_actions_run_sequence;
+      DROP INDEX IF EXISTS idx_agent_actions_project_created;
+      DROP INDEX IF EXISTS idx_agent_actions_task_created;
+      DROP INDEX IF EXISTS idx_decisions_project_status_priority;
+      DROP INDEX IF EXISTS idx_decisions_task_status;
+      DROP INDEX IF EXISTS idx_decisions_run_status;
+      DROP INDEX IF EXISTS idx_decisions_action;
+
+      CREATE TABLE agent_runs_v6 (
+        id TEXT PRIMARY KEY,
+        alias TEXT NOT NULL UNIQUE,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+        task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+        agent_role TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'queued'
+          CHECK (status IN ('queued', 'running', 'blocked', 'merging', 'verifying', 'completed', 'failed', 'cancelled')),
+        goal TEXT NOT NULL,
+        summary TEXT NOT NULL DEFAULT '',
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        started_at TEXT,
+        completed_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE agent_actions_v6 (
+        id TEXT PRIMARY KEY,
+        alias TEXT NOT NULL UNIQUE,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+        task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+        run_id TEXT NOT NULL REFERENCES agent_runs(id) ON DELETE CASCADE,
+        sequence INTEGER NOT NULL CHECK (sequence >= 1),
+        type TEXT NOT NULL CHECK (
+          type IN (
+            'note', 'command', 'file', 'decision', 'status', 'error',
+            'planning', 'reading', 'editing', 'running_command', 'testing',
+            'generating_output', 'asking_user', 'waiting_approval', 'merging', 'reviewing'
+          )
+        ),
+        status TEXT NOT NULL DEFAULT 'completed'
+          CHECK (status IN ('pending', 'running', 'completed', 'failed', 'skipped')),
+        title TEXT NOT NULL,
+        summary TEXT NOT NULL DEFAULT '',
+        payload_json TEXT NOT NULL DEFAULT '{}',
+        started_at TEXT,
+        completed_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE (run_id, sequence)
+      );
+
+      CREATE TABLE decisions_v6 (
+        id TEXT PRIMARY KEY,
+        alias TEXT NOT NULL UNIQUE,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+        task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+        run_id TEXT REFERENCES agent_runs(id) ON DELETE SET NULL,
+        action_id TEXT REFERENCES agent_actions(id) ON DELETE SET NULL,
+        status TEXT NOT NULL DEFAULT 'open'
+          CHECK (status IN ('open', 'answered', 'dismissed')),
+        priority INTEGER NOT NULL DEFAULT 0,
+        question TEXT NOT NULL,
+        context TEXT NOT NULL DEFAULT '',
+        options_json TEXT NOT NULL DEFAULT '[]',
+        answer TEXT,
+        dismissed_reason TEXT,
+        resolved_by TEXT,
+        resolved_at TEXT,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      INSERT INTO agent_runs_v6 (
+        id, alias, project_id, session_id, task_id, agent_role, status, goal, summary,
+        metadata_json, started_at, completed_at, created_at, updated_at
+      )
+      SELECT
+        id, alias, project_id, session_id, task_id, agent_role,
+        CASE status WHEN 'done' THEN 'completed' ELSE status END,
+        goal, summary, metadata_json, started_at, completed_at, created_at, updated_at
+      FROM agent_runs;
+
+      INSERT INTO agent_actions_v6 (
+        id, alias, project_id, session_id, task_id, run_id, sequence, type, status,
+        title, summary, payload_json, started_at, completed_at, created_at, updated_at
+      )
+      SELECT
+        id, alias, project_id, session_id, task_id, run_id, sequence, type, status,
+        title, summary, payload_json, started_at, completed_at, created_at, updated_at
+      FROM agent_actions;
+
+      INSERT INTO decisions_v6 (
+        id, alias, project_id, session_id, task_id, run_id, action_id, status, priority,
+        question, context, options_json, answer, dismissed_reason, resolved_by, resolved_at,
+        metadata_json, created_at, updated_at
+      )
+      SELECT
+        id, alias, project_id, session_id, task_id, run_id, action_id, status, priority,
+        question, context, options_json, answer, dismissed_reason, resolved_by, resolved_at,
+        metadata_json, created_at, updated_at
+      FROM decisions;
+
+      DROP TABLE decisions;
+      DROP TABLE agent_actions;
+      DROP TABLE agent_runs;
+      ALTER TABLE agent_runs_v6 RENAME TO agent_runs;
+      ALTER TABLE agent_actions_v6 RENAME TO agent_actions;
+      ALTER TABLE decisions_v6 RENAME TO decisions;
+
+      CREATE INDEX IF NOT EXISTS idx_agent_runs_project_status ON agent_runs(project_id, status, created_at);
+      CREATE INDEX IF NOT EXISTS idx_agent_runs_task_created ON agent_runs(task_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_agent_runs_session_created ON agent_runs(session_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_agent_actions_run_sequence ON agent_actions(run_id, sequence);
+      CREATE INDEX IF NOT EXISTS idx_agent_actions_project_created ON agent_actions(project_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_agent_actions_task_created ON agent_actions(task_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_decisions_project_status_priority ON decisions(project_id, status, priority, created_at);
+      CREATE INDEX IF NOT EXISTS idx_decisions_task_status ON decisions(task_id, status, created_at);
+      CREATE INDEX IF NOT EXISTS idx_decisions_run_status ON decisions(run_id, status, created_at);
+      CREATE INDEX IF NOT EXISTS idx_decisions_action ON decisions(action_id);
     `,
   },
 ];

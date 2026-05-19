@@ -29,7 +29,9 @@ import {
 } from "./dashboard-actions.ts";
 import {
   answerAskForDashboard,
+  answerDecisionForDashboard,
   buildDashboardSnapshot,
+  dismissDecisionForDashboard,
   readProjects,
   setEvidenceStatusForDashboard,
 } from "./dashboard-data.ts";
@@ -165,6 +167,30 @@ export async function handleDashboardRequest(request: Request, paths: ArdexPaths
       }
       const ask = answerAskForDashboard(paths, requiredSegment(segments, 2, "project"), requiredSegment(segments, 4, "ask"), answer);
       return dataResponse({ ask });
+    }
+    if (request.method === "POST" && segments[1] === "projects" && segments[3] === "decisions" && segments[5] === "answer") {
+      const body = await readJsonBody(request);
+      const answer = typeof body["answer"] === "string" ? body["answer"].trim() : "";
+      if (answer.length === 0) {
+        throw usageError("Decision answer is required.", { field: "answer" });
+      }
+      const decision = answerDecisionForDashboard(
+        paths,
+        requiredSegment(segments, 2, "project"),
+        requiredSegment(segments, 4, "decision"),
+        answer,
+      );
+      return dataResponse({ decision });
+    }
+    if (request.method === "POST" && segments[1] === "projects" && segments[3] === "decisions" && segments[5] === "dismiss") {
+      const body = await readJsonBody(request);
+      const decision = dismissDecisionForDashboard(
+        paths,
+        requiredSegment(segments, 2, "project"),
+        requiredSegment(segments, 4, "decision"),
+        optionalString(body, "reason") ?? optionalString(body, "comment"),
+      );
+      return dataResponse({ decision });
     }
     if (
       request.method === "POST" &&

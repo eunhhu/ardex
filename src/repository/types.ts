@@ -73,6 +73,116 @@ export type TaskEvent = {
   createdAt: string;
 };
 
+export type AgentRunStatus = "queued" | "running" | "blocked" | "merging" | "verifying" | "completed" | "failed" | "cancelled";
+
+export type AgentRun = {
+  id: string;
+  alias: string;
+  projectId: string;
+  sessionId: string | null;
+  taskId: string | null;
+  agentRole: string;
+  owner: string;
+  status: AgentRunStatus;
+  goal: string;
+  summary: string;
+  metadata: Record<string, unknown>;
+  pid: number | null;
+  worktreePath: string | null;
+  branchName: string | null;
+  model: string | null;
+  autonomyBudget: Record<string, unknown>;
+  startedAt: string | null;
+  lastSeenAt: string;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AgentActionType =
+  | "note"
+  | "command"
+  | "file"
+  | "decision"
+  | "status"
+  | "error"
+  | "planning"
+  | "reading"
+  | "editing"
+  | "running_command"
+  | "testing"
+  | "generating_output"
+  | "asking_user"
+  | "waiting_approval"
+  | "merging"
+  | "reviewing";
+
+export type AgentActionKind = AgentActionType;
+
+export type AgentActionStatus = "pending" | "running" | "completed" | "failed" | "skipped";
+
+export type AgentAction = {
+  id: string;
+  alias: string;
+  projectId: string;
+  sessionId: string | null;
+  taskId: string | null;
+  runId: string;
+  sequence: number;
+  type: AgentActionType;
+  kind: AgentActionKind;
+  status: AgentActionStatus;
+  title: string;
+  summary: string;
+  payload: Record<string, unknown>;
+  currentFile: string | null;
+  command: string | null;
+  progress: number | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DecisionStatus = "open" | "answered" | "dismissed";
+
+export type DecisionType = "product_choice" | "visual_approval" | "scope_change" | "risk_waiver" | "merge_approval" | "deployment_approval";
+
+export type DecisionOption = {
+  id: string;
+  label: string;
+  description?: string;
+  consequence?: string;
+};
+
+export type Decision = {
+  id: string;
+  alias: string;
+  projectId: string;
+  sessionId: string | null;
+  taskId: string | null;
+  runId: string | null;
+  agentRunId: string | null;
+  actionId: string | null;
+  type: DecisionType | null;
+  question: string;
+  context: string;
+  options: DecisionOption[];
+  recommendedOption: string | null;
+  required: boolean;
+  priority: number;
+  status: DecisionStatus;
+  answer: string | null;
+  dismissedReason: string | null;
+  resolvedBy: string | null;
+  resolvedAt: string | null;
+  answeredAt: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type Evidence = {
   id: string;
   alias: string;

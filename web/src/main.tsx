@@ -5,6 +5,7 @@ import { currentSession, currentTask, projectReview } from "./review.ts";
 import { projectName, shortPath } from "./format.ts";
 import type { DashboardSnapshot, ProjectSummary } from "./types.ts";
 import { AddTaskDialog } from "./components/AddTaskDialog.tsx";
+import { AgentControlRoom } from "./components/AgentControlRoom.tsx";
 import { AskItem } from "./components/AskItem.tsx";
 import { ProjectMenu } from "./components/ProjectMenu.tsx";
 import { ScalePanel } from "./components/ScalePanel.tsx";
@@ -184,6 +185,8 @@ function App() {
           </article>
           <SummaryCard label="Readiness" value={review?.readiness ?? "No report"} detail={review?.readinessDetail ?? ""} />
         </section>
+
+        <AgentControlRoom snapshot={snapshot} projectId={projectId} mutate={mutate} />
 
         <section class="work-grid">
           <section class="panel task-panel">

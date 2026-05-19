@@ -908,6 +908,33 @@ Meaning:
 2. With `-a`, records an assumed/default answer for traceability.
 3. With `-i`, attaches image evidence so the web UI can show visual choices.
 
+### Autonomy Primitives
+
+Phase A exposes record-keeping commands for the control room. These commands do not launch Codex processes or spawn daemon-side subagents; they record and update work performed by the main agent, external subagent tools, or a future scheduler.
+
+```bash
+ardex -p <project_id> agent-run ls
+ardex -p <project_id> agent-run start --task <task_id> --owner subagent:<role> --model <model>
+ardex -p <project_id> agent-run heartbeat <run_id> --status running
+ardex -p <project_id> agent-run done <run_id> --summary "Work complete"
+ardex -p <project_id> agent-run fail <run_id> --reason "Blocked by missing API contract"
+
+ardex -p <project_id> agent-action ls --run <run_id>
+ardex -p <project_id> agent-action add --run <run_id> --type file --summary "Editing API docs" --payload '{"file":"docs/API.md","progress":0.4}'
+ardex -p <project_id> agent-action end <action_id> --status completed
+
+ardex -p <project_id> decision ls --status open
+ardex -p <project_id> decision add --task <task_id> --run <run_id> --question "Expand scope?" --option approve:"Accept scope" --option reject:"Keep current scope" --priority 1
+ardex -p <project_id> decision <decision_id> answer approve
+ardex -p <project_id> decision <decision_id> dismiss
+```
+
+Command intent:
+
+1. `agent-run`: one leased execution unit with owner, task, status, heartbeat, workspace metadata, model, and budget.
+2. `agent-action`: a readable timeline chapter for a run, not raw terminal output.
+3. `decision`: a required or optional human choice that blocks only the affected task/run.
+
 ### Advisor
 
 ```bash
@@ -1065,6 +1092,20 @@ GET  /tasks/:taskId
 PATCH /tasks/:taskId
 POST /tasks/:taskId/claim
 POST /tasks/:taskId/done
+
+GET  /projects/:projectId/agent-runs
+POST /projects/:projectId/agent-runs
+POST /agent-runs/:runId/heartbeat
+PATCH /agent-runs/:runId
+
+GET  /projects/:projectId/agent-actions
+POST /projects/:projectId/agent-actions
+POST /agent-actions/:actionId/end
+
+GET  /projects/:projectId/decisions
+POST /projects/:projectId/decisions
+POST /decisions/:decisionId/answer
+POST /decisions/:decisionId/dismiss
 
 POST /projects/:projectId/scale/check
 GET  /projects/:projectId/scale/reports
@@ -2019,6 +2060,8 @@ Examples:
 
 Open asks, visual approvals, scale waivers, merge approvals, deploy approvals, and scope choices must be unified as decisions.
 
+Phase A decision queue scope is storage, CLI/API mutation, dashboard snapshot exposure, and user-visible review/answer state. It does not include approval policy automation beyond required/open status checks, and it does not launch or resume agent processes by itself.
+
 Decision queue entries must show:
 
 1. Type.
@@ -2203,6 +2246,14 @@ Phase A: Visibility Core
 3. Add `Decision Queue` storage and APIs.
 4. Add dashboard agent grid.
 5. Add control-room layout for session strip, roadmap, timeline, outputs, and decisions.
+
+Phase A non-goals:
+
+1. Daemon-side Codex subagent spawning.
+2. Automatic worktree creation or patch collection.
+3. Merge queue execution.
+4. Unattended swarm scheduling.
+5. Killing or interrupting a streaming Codex response.
 
 Phase B: Autonomous Single Task
 

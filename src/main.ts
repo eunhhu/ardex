@@ -2,6 +2,7 @@ import { checkDaemon, runDaemon, startDaemon } from "./daemon.ts";
 import { daemonUnavailable, usageError } from "./errors.ts";
 import { printError, printSuccess, success, type CommandSuccess, VERSION } from "./output.ts";
 import type { ParsedArgs } from "./cli-types.ts";
+import { agentActionCommand, agentRunCommand, decisionCommand } from "./cli-autonomy-commands.ts";
 import {
   checkCommand,
   helpCommand,
@@ -138,6 +139,12 @@ async function dispatch(parsed: ParsedArgs): Promise<CommandSuccess> {
       return await evidenceCommand(parsed);
     case "ask":
       return await askCommand(parsed);
+    case "agent-run":
+      return await agentRunCommand(parsed);
+    case "agent-action":
+      return await agentActionCommand(parsed);
+    case "decision":
+      return await decisionCommand(parsed);
     case "scale":
       return await scaleCommand(parsed);
     default:
